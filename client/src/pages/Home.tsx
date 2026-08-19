@@ -26,13 +26,7 @@ const ASSETS = {
   legacyWordmark: "/manus-storage/reborn-original-wordmark-cropped_4aa8ffb6.png",
 };
 
-const filmSegments = [
-  "/manus-storage/reborn-film-01-collect_44b0e8f4.mp4",
-  "/manus-storage/reborn-film-02-secure_f11a16a6.mp4",
-  "/manus-storage/reborn-film-03-renew_d1249e08.mp4",
-  "/manus-storage/reborn-film-04-recover_8a7bb169.mp4",
-  "/manus-storage/reborn-film-05-return_79f083cb.mp4",
-];
+const continuousFilm = "/manus-storage/reborn-asset-to-impact-film-continuous_1065c67c.mp4";
 
 const journey = [
   {
@@ -96,7 +90,6 @@ const serviceRoutes = [
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [filmIndex, setFilmIndex] = useState(0);
 
   const showPortalMessage = () => {
     toast("Customer portal — coming soon", {
@@ -106,7 +99,6 @@ export default function Home() {
   };
 
   const closeMenu = () => setMenuOpen(false);
-  const advanceFilm = () => setFilmIndex((current) => (current + 1) % filmSegments.length);
 
   return (
     <div className="site-shell">
@@ -134,15 +126,14 @@ export default function Home() {
       <main id="top">
         <section className="hero-section" aria-labelledby="hero-title">
           <video
-            key={filmSegments[filmIndex]}
             className="hero-video"
-            src={filmSegments[filmIndex]}
+            src={continuousFilm}
             poster={ASSETS.hero}
             autoPlay
             muted
+            loop
             playsInline
             preload="auto"
-            onEnded={advanceFilm}
             aria-label="Illustrative Reborn Tech asset-to-impact film: secure collection, processing, renewal, recovery and return"
           />
           <div className="hero-vignette" />
@@ -155,7 +146,7 @@ export default function Home() {
               <a className="button button-lime" href="#contact">Start an asset journey <ArrowUpRight size={18} /></a>
               <a className="text-link" href="#journey">Follow the process <ChevronRight size={18} /></a>
             </div>
-            <p className="hero-film-status"><span className="film-pulse" />ASSET-TO-IMPACT FILM / {String(filmIndex + 1).padStart(2, "0")} OF 05</p>
+            <p className="hero-film-status"><span className="film-pulse" />ASSET-TO-IMPACT FILM / CONTINUOUS EDIT</p>
           </div>
           <div className="hero-index" aria-label="Reborn Tech approach">
             <span>01 / 04</span>

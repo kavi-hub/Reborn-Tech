@@ -14,3 +14,15 @@
 - [x] Restore the original Reborn handset-website logo treatment in the new header and footer.
 - [x] Put Signal Lime labels and route accents over a stronger supporting background where needed so they remain clearly visible.
 - [x] Produce and integrate the approved collection-to-impact film in place of the hero’s single still image.
+
+## Next approved workstream
+
+- [ ] Add a live ITAD assessment form that records customer enquiries and supports operational follow-up.
+- [x] Retain the illustrative hero-film sequence rather than replacing it with real Reborn operational footage at this stage.
+- [ ] Review and approve the final Reborn wordmark / Reborn Tech lock-up after the above items are complete.
+
+## Hero polish request — 19 August 2026
+
+- [x] Replace the unstable collection shot with a sealed-crate sequence so no laptops can move unnaturally.
+- [x] Remove the poster-frame flash between film clips with a single continuous cross-faded film edit.
+- [x] Scale the hero panel and typography down with available screen space so each film scene remains visible.
