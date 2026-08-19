@@ -7,3 +7,10 @@
 - [ ] Provision a transparent future customer-portal entry point without implementing authentication or role-based data access.
 - [ ] Produce the approved impact-film treatment: collection, sorting, secure processing, repair / recycling, redistribution and human outcome.
 - [x] Commit and push the completed Reborn Tech website source to the new `reborn-tech` GitHub repository (`main`, commit `131af60`).
+
+## Refinement request — 19 August 2026
+
+- [x] Keep the full desktop navigation visible at tablet widths; move to the hamburger only on narrower mobile devices.
+- [x] Restore the original Reborn handset-website logo treatment in the new header and footer.
+- [x] Put Signal Lime labels and route accents over a stronger supporting background where needed so they remain clearly visible.
+- [x] Produce and integrate the approved collection-to-impact film in place of the hero’s single still image.

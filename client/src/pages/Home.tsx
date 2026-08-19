@@ -23,8 +23,16 @@ const ASSETS = {
   processing: "/manus-storage/reborn-itad-secure-processing_e2cbfd90.jpg",
   renewal: "/manus-storage/reborn-itad-renewal-repair_548b25ca.jpg",
   impact: "/manus-storage/reborn-itad-human-impact_2194f47e.jpg",
-  logo: "/manus-storage/reborn-tech-loop-mark_02435898.png",
+  legacyWordmark: "/manus-storage/reborn-original-wordmark-cropped_4aa8ffb6.png",
 };
+
+const filmSegments = [
+  "/manus-storage/reborn-film-01-collect_44b0e8f4.mp4",
+  "/manus-storage/reborn-film-02-secure_f11a16a6.mp4",
+  "/manus-storage/reborn-film-03-renew_d1249e08.mp4",
+  "/manus-storage/reborn-film-04-recover_8a7bb169.mp4",
+  "/manus-storage/reborn-film-05-return_79f083cb.mp4",
+];
 
 const journey = [
   {
@@ -88,6 +96,7 @@ const serviceRoutes = [
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [filmIndex, setFilmIndex] = useState(0);
 
   const showPortalMessage = () => {
     toast("Customer portal — coming soon", {
@@ -97,13 +106,13 @@ export default function Home() {
   };
 
   const closeMenu = () => setMenuOpen(false);
+  const advanceFilm = () => setFilmIndex((current) => (current + 1) % filmSegments.length);
 
   return (
     <div className="site-shell">
       <header className="site-header">
         <a className="brand-lockup" href="#top" aria-label="Reborn Tech home" onClick={closeMenu}>
-          <img className="brand-mark" src={ASSETS.logo} alt="" />
-          <span className="brand-name">REBORN<span>TECH</span></span>
+          <img className="legacy-wordmark" src={ASSETS.legacyWordmark} alt="Reborn Tech" />
         </a>
 
         <nav className={`site-nav ${menuOpen ? "is-open" : ""}`} aria-label="Primary navigation">
@@ -124,7 +133,18 @@ export default function Home() {
 
       <main id="top">
         <section className="hero-section" aria-labelledby="hero-title">
-          <img className="hero-image" src={ASSETS.hero} alt="Secure collection of retired business technology" />
+          <video
+            key={filmSegments[filmIndex]}
+            className="hero-video"
+            src={filmSegments[filmIndex]}
+            poster={ASSETS.hero}
+            autoPlay
+            muted
+            playsInline
+            preload="auto"
+            onEnded={advanceFilm}
+            aria-label="Illustrative Reborn Tech asset-to-impact film: secure collection, processing, renewal, recovery and return"
+          />
           <div className="hero-vignette" />
           <div className="hero-trace" aria-hidden="true"><span /></div>
           <div className="hero-panel">
@@ -135,6 +155,7 @@ export default function Home() {
               <a className="button button-lime" href="#contact">Start an asset journey <ArrowUpRight size={18} /></a>
               <a className="text-link" href="#journey">Follow the process <ChevronRight size={18} /></a>
             </div>
+            <p className="hero-film-status"><span className="film-pulse" />ASSET-TO-IMPACT FILM / {String(filmIndex + 1).padStart(2, "0")} OF 05</p>
           </div>
           <div className="hero-index" aria-label="Reborn Tech approach">
             <span>01 / 04</span>
@@ -156,7 +177,7 @@ export default function Home() {
         <section id="journey" className="journey-section" aria-labelledby="journey-title">
           <div className="journey-head">
             <div>
-              <p className="asset-label"><span className="label-dot" />THE TRACE</p>
+              <p className="asset-label light-surface-label"><span className="label-dot" />THE TRACE</p>
               <h2 id="journey-title">Nothing disappears into a black box.</h2>
             </div>
             <p>From the first collection plan to the final asset outcome, the route is designed to be clear, defensible and useful.</p>
@@ -280,7 +301,7 @@ export default function Home() {
       </main>
 
       <footer className="site-footer">
-        <a className="brand-lockup footer-brand" href="#top" aria-label="Back to top"><img className="brand-mark" src={ASSETS.logo} alt="" /><span className="brand-name">REBORN<span>TECH</span></span></a>
+        <a className="brand-lockup footer-brand" href="#top" aria-label="Back to top"><img className="legacy-wordmark" src={ASSETS.legacyWordmark} alt="Reborn Tech" /></a>
         <p>Secure ITAD. Second life, verified.</p>
         <div><span>Powered by Bulk GSM capability</span><span>© {new Date().getFullYear()} Reborn Tech</span></div>
       </footer>
