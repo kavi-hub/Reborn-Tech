@@ -23,7 +23,7 @@ const ASSETS = {
   processing: "/manus-storage/reborn-itad-secure-processing_e2cbfd90.jpg",
   renewal: "/manus-storage/reborn-itad-renewal-repair_548b25ca.jpg",
   impact: "/manus-storage/reborn-itad-human-impact_2194f47e.jpg",
-  legacyWordmark: "/manus-storage/reborn-original-wordmark-cropped_4aa8ffb6.png",
+  logo: "/manus-storage/reborn-tech-loop-mark_02435898.png",
 };
 
 const continuousFilm = "/manus-storage/reborn-asset-to-impact-film-continuous_1065c67c.mp4";
@@ -104,7 +104,8 @@ export default function Home() {
     <div className="site-shell">
       <header className="site-header">
         <a className="brand-lockup" href="#top" aria-label="Reborn Tech home" onClick={closeMenu}>
-          <img className="legacy-wordmark" src={ASSETS.legacyWordmark} alt="Reborn Tech" />
+          <span className="brand-mark-field"><img className="brand-mark" src={ASSETS.logo} alt="" /></span>
+          <span className="brand-name">REBORN<span>TECH</span></span>
         </a>
 
         <nav className={`site-nav ${menuOpen ? "is-open" : ""}`} aria-label="Primary navigation">
@@ -292,7 +293,7 @@ export default function Home() {
       </main>
 
       <footer className="site-footer">
-        <a className="brand-lockup footer-brand" href="#top" aria-label="Back to top"><img className="legacy-wordmark" src={ASSETS.legacyWordmark} alt="Reborn Tech" /></a>
+        <a className="brand-lockup footer-brand" href="#top" aria-label="Back to top"><span className="brand-mark-field"><img className="brand-mark" src={ASSETS.logo} alt="" /></span><span className="brand-name">REBORN<span>TECH</span></span></a>
         <p>Secure ITAD. Second life, verified.</p>
         <div><span>Powered by Bulk GSM capability</span><span>© {new Date().getFullYear()} Reborn Tech</span></div>
       </footer>

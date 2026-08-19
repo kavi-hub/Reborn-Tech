@@ -26,3 +26,8 @@
 - [x] Replace the unstable collection shot with a sealed-crate sequence so no laptops can move unnaturally.
 - [x] Remove the poster-frame flash between film clips with a single continuous cross-faded film edit.
 - [x] Scale the hero panel and typography down with available screen space so each film scene remains visible.
+
+## Identity update — 19 August 2026
+
+- [x] Restore the original Reborn Tech open-loop icon in the header and footer.
+- [x] Add a high-contrast background treatment behind the open-loop icon so it reads clearly at all sizes.
