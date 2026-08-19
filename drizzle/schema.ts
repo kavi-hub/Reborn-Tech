@@ -54,3 +54,39 @@ export const assessmentRequests = mysqlTable("assessmentRequests", {
 
 export type AssessmentRequest = typeof assessmentRequests.$inferSelect;
 export type InsertAssessmentRequest = typeof assessmentRequests.$inferInsert;
+
+/** Customer organisations are the scope boundary for customer-portal visibility. */
+export const customerOrganisations = mysqlTable("customerOrganisations", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** A signed-in person can have an admin or viewer role within a customer organisation. */
+export const customerOrganisationMembers = mysqlTable("customerOrganisationMembers", {
+  id: int("id").autoincrement().primaryKey(),
+  organisationId: int("organisationId").notNull(),
+  userId: int("userId").notNull(),
+  role: mysqlEnum("role", ["admin", "viewer"]).default("viewer").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Collection milestones visible to the Reborn team and scoped customer-organisation members. */
+export const collectionTracks = mysqlTable("collectionTracks", {
+  id: int("id").autoincrement().primaryKey(),
+  organisationId: int("organisationId").notNull(),
+  reference: varchar("reference", { length: 64 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["planned", "confirmed", "collected", "processing", "outcome_reported"]).default("planned").notNull(),
+  scheduledFor: timestamp("scheduledFor"),
+  collectionPostcode: varchar("collectionPostcode", { length: 24 }),
+  customerNote: text("customerNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CustomerOrganisation = typeof customerOrganisations.$inferSelect;
+export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inferSelect;
+export type CollectionTrack = typeof collectionTracks.$inferSelect;

@@ -9,7 +9,7 @@ const navigation = [
   { href: "/security", label: "Security" },
   { href: "/impact", label: "Impact" },
   { href: "/#locations", label: "Locations" },
-  { href: "/#portal", label: "Customer portal", portal: true },
+  { href: "/portal", label: "Customer portal", portal: true },
 ];
 
 export function SiteHeader({ active }: { active?: string }) {

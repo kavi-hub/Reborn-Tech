@@ -70,3 +70,12 @@
 - [x] Add a protected Reborn operations dashboard with enquiry search, status management and detailed assessment records.
 - [x] Add a smooth, accessible assessment-success animation and clear post-submission confirmation message.
 - [x] Publish a downloadable Privacy Information PDF and link it from the public privacy page.
+
+## Operating platform expansion
+
+- [x] Send the project owner an alert when a new ITAD assessment is submitted.
+- [x] Add CSV export for the filtered assessment-enquiry queue.
+- [x] Add customer organisation roles and a role-based customer portal for collection tracking.
+- [x] Enforce distinct customer-portal permissions for organisation admin and viewer roles, with server coverage.
+- [x] Give organisation admins a customer-facing viewer-access capability while keeping viewers read-only.
+- [x] Prove through server tests that a customer viewer or non-member cannot grant portal access, while an organisation admin can.

@@ -1,0 +1,32 @@
+/** Reborn customer portal: organisation-scoped visibility of live collection milestones. */
+import { useState } from "react";
+import { ArrowUpRight, CalendarDays, ClipboardCheck, LoaderCircle, MapPin, Route as RouteIcon, UserRoundPlus } from "lucide-react";
+import { toast } from "sonner";
+import { startLogin } from "@/const";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import { SiteFooter, SiteHeader } from "@/components/PublicChrome";
+
+const stages = ["planned", "confirmed", "collected", "processing", "outcome_reported"] as const;
+const labels: Record<(typeof stages)[number], string> = { planned: "Planned", confirmed: "Confirmed", collected: "Collected", processing: "Processing", outcome_reported: "Outcome reported" };
+
+function statusIndex(status: (typeof stages)[number]) { return stages.indexOf(status); }
+
+function ViewerAccess({ organisationId, organisationName }: { organisationId: number; organisationName: string }) {
+  const [email, setEmail] = useState("");
+  const grantViewer = trpc.customerPortal.assignViewer.useMutation({
+    onSuccess: () => { setEmail(""); toast("Viewer access granted", { description: "The customer can now sign in to see this organisation’s collection routes." }); },
+    onError: (error) => toast("Viewer access could not be granted", { description: error.message }),
+  });
+  return <section className="portal-admin-access"><div><p className="asset-label dark-label"><span className="label-dot" />ORGANISATION ADMIN</p><h3>Give a colleague read-only route visibility.</h3><p>They must sign in with this work email once before access can be granted. Viewers can see collection milestones but cannot add people or change route information.</p></div><div className="portal-access-form"><label>Colleague work email<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="colleague@company.com" type="email" /></label><button className="button button-dark" disabled={!email || grantViewer.isPending} onClick={() => grantViewer.mutate({ organisationId, email })}>{grantViewer.isPending ? <LoaderCircle className="assessment-spin" size={17} /> : <UserRoundPlus size={17} />}Grant viewer access</button></div><small>{organisationName}</small></section>;
+}
+
+export default function CustomerPortal() {
+  const { user, loading } = useAuth();
+  const collections = trpc.customerPortal.collections.useQuery(undefined, { enabled: Boolean(user) });
+  const organisationAdmins = collections.data ? Array.from(new Map(collections.data.filter((entry) => entry.member.role === "admin").map((entry) => [entry.organisation.id, entry.organisation])).values()) : [];
+
+  return <div className="portal-shell"><SiteHeader active="Customer portal" /><main className="customer-portal">
+    <header className="customer-portal-head"><div><p className="asset-label dark-label"><span className="label-dot" />CUSTOMER PORTAL / COLLECTION VISIBILITY</p><h1>See what is moving. <em>And what happens next.</em></h1><p>Assigned organisation members can follow their collection milestones here. Assessment enquiries become visible once a Reborn operations team member opens a tracked route.</p></div><div className="portal-head-mark"><RouteIcon size={35} /><span>REBORN<br />TRACK</span></div></header>
+    {loading ? <div className="portal-state"><LoaderCircle className="assessment-spin" size={25} />Preparing your portal</div> : !user ? <section className="portal-signin"><p className="asset-label dark-label"><span className="label-dot" />AUTHENTICATION REQUIRED</p><h2>Your collection records are organisation-specific.</h2><p>Sign in with the work email that Reborn has assigned to your organisation. New customer access is set up by Reborn Operations after your first successful sign-in.</p><button className="button button-dark" onClick={() => startLogin()}>Sign in to customer portal <ArrowUpRight size={18} /></button></section> : collections.isLoading ? <div className="portal-state"><LoaderCircle className="assessment-spin" size={25} />Loading collection routes</div> : collections.data?.length ? <section className="portal-collection-list">{collections.data.map(({ collection, organisation, member }) => <article key={collection.id} className="portal-collection-card"><div className="portal-card-top"><div><span>{collection.reference}</span><h2>{collection.title}</h2><p>{organisation.name} · {member.role === "admin" ? "Organisation admin" : "Organisation viewer"}</p></div><strong className={`portal-status portal-status-${collection.status}`}>{labels[collection.status]}</strong></div><div className="portal-route" aria-label={`Collection status: ${labels[collection.status]}`}>{stages.map((stage, index) => <div key={stage} className={index <= statusIndex(collection.status) ? "is-complete" : ""}><span>{String(index + 1).padStart(2, "0")}</span><i /><small>{labels[stage]}</small></div>)}</div><div className="portal-card-meta"><span><CalendarDays size={16} />{collection.scheduledFor ? `Scheduled ${collection.scheduledFor.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : "Collection date to be confirmed"}</span><span><MapPin size={16} />{collection.collectionPostcode || "Collection location held by Reborn"}</span></div>{collection.customerNote ? <p className="portal-customer-note"><ClipboardCheck size={17} />{collection.customerNote}</p> : null}</article>)}{organisationAdmins.map((organisation) => <ViewerAccess key={organisation.id} organisationId={organisation.id} organisationName={organisation.name} />)}</section> : <section className="portal-empty"><p className="asset-label dark-label"><span className="label-dot" />NO TRACKED ROUTES YET</p><h2>Your account is active. Your organisation has no visible collection routes yet.</h2><p>Once a collection is planned, Reborn Operations will add the route here. If you expected to see an active route, contact the team with your collection reference.</p><a className="button button-dark" href="/#contact">Contact Reborn Operations <ArrowUpRight size={18} /></a></section>}</main><SiteFooter /></div>;
+}
