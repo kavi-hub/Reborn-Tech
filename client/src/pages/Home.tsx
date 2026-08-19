@@ -3,21 +3,19 @@
  * Charcoal / warm-paper foundation; Signal Lime is reserved for route, proof and action.
  * Structure follows an asset journey, not a conventional centralised marketing grid.
  */
-import { useState } from "react";
 import {
   ArrowUpRight,
   Check,
   ChevronRight,
   FileCheck2,
   HeartHandshake,
-  Menu,
   Route,
   ScanLine,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssessmentForm } from "@/components/AssessmentForm";
+import { SiteFooter, SiteHeader } from "@/components/PublicChrome";
 
 const ASSETS = {
   hero: "/manus-storage/reborn-itad-hero-asset-journey_e654ae29.jpg",
@@ -90,8 +88,6 @@ const serviceRoutes = [
 ];
 
 export default function Home() {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const showPortalMessage = () => {
     toast("Customer portal — coming soon", {
       description:
@@ -99,31 +95,9 @@ export default function Home() {
     });
   };
 
-  const closeMenu = () => setMenuOpen(false);
-
   return (
     <div className="site-shell">
-      <header className="site-header">
-        <a className="brand-lockup" href="#top" aria-label="Reborn Tech home" onClick={closeMenu}>
-          <span className="brand-mark-field"><img className="brand-mark" src={ASSETS.logo} alt="" /></span>
-          <span className="brand-name">REBORN<span>TECH</span></span>
-        </a>
-
-        <nav className={`site-nav ${menuOpen ? "is-open" : ""}`} aria-label="Primary navigation">
-          <a href="#journey" onClick={closeMenu}>The journey</a>
-          <a href="#services" onClick={closeMenu}>Services</a>
-          <a href="#impact" onClick={closeMenu}>Impact</a>
-          <a href="#locations" onClick={closeMenu}>Locations</a>
-          <button className="nav-portal" onClick={showPortalMessage}>Customer portal <ArrowUpRight size={14} /></button>
-        </nav>
-
-        <div className="header-actions">
-          <a className="header-cta" href="#contact">Start an asset journey <ArrowUpRight size={15} /></a>
-          <button className="menu-toggle" onClick={() => setMenuOpen((open) => !open)} aria-label="Toggle menu" aria-expanded={menuOpen}>
-            {menuOpen ? <X size={23} /> : <Menu size={23} />}
-          </button>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main id="top">
         <section className="hero-section" aria-labelledby="hero-title">
@@ -273,7 +247,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="portal-section" aria-labelledby="portal-title">
+        <section id="portal" className="portal-section" aria-labelledby="portal-title">
           <Route className="portal-route" strokeWidth={1.3} />
           <div>
             <p className="asset-label"><span className="label-dot" />CUSTOMER PORTAL / IN DEVELOPMENT</p>
@@ -293,11 +267,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="site-footer">
-        <a className="brand-lockup footer-brand" href="#top" aria-label="Back to top"><span className="brand-mark-field"><img className="brand-mark" src={ASSETS.logo} alt="" /></span><span className="brand-name">REBORN<span>TECH</span></span></a>
-        <p>Secure ITAD. Second life, verified.</p>
-        <div><span>Powered by Bulk GSM capability</span><span>© {new Date().getFullYear()} Reborn Tech</span></div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

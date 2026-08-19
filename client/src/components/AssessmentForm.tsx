@@ -91,7 +91,7 @@ export function AssessmentForm() {
         <label><input type="checkbox" {...register("requiresOnSiteErasure")} /><span>We may require on-site data erasure.</span></label>
       </div>
       <label className="assessment-field assessment-notes"><span>Anything else we should know?</span><textarea {...register("notes")} placeholder="Access constraints, equipment detail, reporting needs or a preferred collection date." rows={4} /></label>
-      <label className="assessment-consent"><input type="checkbox" {...register("contactConsent", { required: "Please confirm that we may contact you" })} /><span>I agree that Reborn Tech may contact me about this ITAD assessment. <b>*</b></span></label>
+      <label className="assessment-consent"><input type="checkbox" {...register("contactConsent", { required: "Please confirm that we may contact you" })} /><span>I agree that Reborn Tech may contact me about this ITAD assessment. <b>*</b> Read our <a href="/privacy">privacy information</a>.</span></label>
       {errors.contactConsent && <p className="assessment-error">{errors.contactConsent.message}</p>}
       <div className="assessment-submit-row"><p>Your request is stored securely for our operations team and becomes the first record in your asset journey.</p><button className="button button-lime assessment-submit" type="submit" disabled={submitAssessment.isPending}>{submitAssessment.isPending ? <><LoaderCircle className="assessment-spin" size={17} />Sending request</> : "Request an ITAD assessment"}</button></div>
     </form>
