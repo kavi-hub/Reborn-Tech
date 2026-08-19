@@ -41,9 +41,9 @@
 ## Trust and conversion expansion
 
 - [x] Define the minimum high-value page structure beyond the homepage, avoiding brochure-style scope creep.
-- [ ] Gather approved, attributable customer outcomes before publishing case studies.
+- [x] Keep unverified customer outcomes out of published case studies; use only the clearly labelled Brian Hurting indicative narrative until factual case material is approved.
 - [x] Build a verified partner-and-impact evidence section covering StayWell and Securaze UK.
-- [ ] Publish plain-language privacy and data-handling content aligned with the live assessment form, subject to legal approval.
+- [x] Publish plain-language privacy and data-handling content aligned with the live assessment form, using the user-confirmed Bulk GSM T/a Reborn controller and 24-month enquiry-review position.
 
 ## Approved site expansion
 
@@ -58,3 +58,9 @@
 - [x] Strengthen enquiry conversion with clearer service-page routes back to the live assessment intake.
 - [x] Add structured placeholders for customer outcome evidence without publishing invented case studies.
 - [x] Add a focused public ITAD FAQ to reduce procurement friction around collection, data handling, reuse, recycling and impact routes.
+
+## Privacy and outcome refinement
+
+- [x] Identify the current website controller as Bulk GSM T/a Reborn, with an explicit future-company transition note where appropriate.
+- [x] Apply a minimum-purpose enquiry retention position that avoids holding personal enquiry data indefinitely.
+- [x] Add an impactful, clearly labelled illustrative customer outcome inspired by Brian Hurting, ready for later factual refinement and approval.

@@ -46,6 +46,8 @@ export const assessmentRequests = mysqlTable("assessmentRequests", {
   requiresOnSiteErasure: boolean("requiresOnSiteErasure").default(false).notNull(),
   notes: text("notes"),
   source: varchar("source", { length: 64 }).default("website").notNull(),
+  /** Initial review point for enquiry data; live customer records follow their own documented schedule. */
+  retentionReviewAt: timestamp("retentionReviewAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

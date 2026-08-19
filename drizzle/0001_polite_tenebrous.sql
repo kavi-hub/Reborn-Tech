@@ -1,0 +1,1 @@
+ALTER TABLE `assessmentRequests` ADD `retentionReviewAt` timestamp;

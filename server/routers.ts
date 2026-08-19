@@ -37,6 +37,9 @@ export const appRouter = router({
   }),
   assessment: router({
     submit: publicProcedure.input(assessmentInputSchema).mutation(async ({ input }) => {
+      const retentionReviewAt = new Date();
+      retentionReviewAt.setUTCFullYear(retentionReviewAt.getUTCFullYear() + 2);
+
       await createAssessmentRequest({
         fullName: input.fullName,
         email: input.email,
@@ -52,6 +55,7 @@ export const appRouter = router({
         requiresOnSiteErasure: input.requiresOnSiteErasure,
         notes: input.notes || null,
         source: "website",
+        retentionReviewAt,
       });
 
       return { success: true } as const;

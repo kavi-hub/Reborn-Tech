@@ -53,6 +53,7 @@ describe("assessment input validation", () => {
       organisation: "Northwind Services",
       assetCategories: "Laptops, Mobile devices",
       source: "website",
+      retentionReviewAt: expect.any(Date),
     }));
   });
 });
