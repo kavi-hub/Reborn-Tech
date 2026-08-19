@@ -1,6 +1,6 @@
 /** Material Trace form: structured intake for a secure ITAD assessment, deliberately concise but operationally useful. */
 import { useState } from "react";
-import { CheckCircle2, LoaderCircle } from "lucide-react";
+import { CheckCircle2, LoaderCircle, Route } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -26,7 +26,7 @@ const categories = ["Laptops & desktops", "Mobile devices", "Servers & storage",
 
 export function AssessmentForm() {
   const [submitted, setSubmitted] = useState(false);
-  const { register, handleSubmit, formState: { errors } } = useForm<AssessmentFormValues>({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<AssessmentFormValues>({
     defaultValues: {
       assetCategories: [],
       hasInventory: false,
@@ -37,6 +37,7 @@ export function AssessmentForm() {
 
   const submitAssessment = trpc.assessment.submit.useMutation({
     onSuccess: () => {
+      reset();
       setSubmitted(true);
       toast("Assessment received", { description: "A Reborn Tech team member will review the request and be in touch." });
     },
@@ -52,12 +53,14 @@ export function AssessmentForm() {
 
   if (submitted) {
     return (
-      <div className="assessment-success" role="status">
-        <CheckCircle2 size={33} />
+      <div className="assessment-success" role="status" aria-live="polite">
+        <div className="assessment-success-mark"><CheckCircle2 size={36} /><span /></div>
         <div>
           <p className="assessment-kicker">REQUEST RECEIVED / ROUTE OPEN</p>
           <h3>Your assessment is in motion.</h3>
-          <span>We will review your asset scope and contact you about the most suitable next step.</span>
+          <span>Your enquiry has been securely recorded. We will review the asset scope and contact you using the details you supplied.</span>
+          <div className="assessment-success-steps" aria-label="What happens next"><span><CheckCircle2 size={14} />Request logged</span><span><Route size={14} />Route reviewed</span><span>03 / We contact you</span></div>
+          <button className="assessment-another" type="button" onClick={() => setSubmitted(false)}>Submit another assessment</button>
         </div>
       </div>
     );

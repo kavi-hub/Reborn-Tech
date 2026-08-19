@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { assessmentRequests, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -96,4 +96,52 @@ export async function createAssessmentRequest(request: InsertAssessmentRequest):
   }
 
   await db.insert(assessmentRequests).values(request);
+}
+
+export type AssessmentListOptions = {
+  search?: string;
+  status?: "new" | "contacted" | "qualified" | "closed";
+  page: number;
+  limit: number;
+  sort: "newest" | "oldest";
+};
+
+export async function listAssessmentRequests(options: AssessmentListOptions) {
+  const db = await getDb();
+  if (!db) throw new Error("Assessment storage is temporarily unavailable");
+
+  const clauses = [];
+  if (options.status) clauses.push(eq(assessmentRequests.status, options.status));
+  if (options.search?.trim()) {
+    const term = `%${options.search.trim()}%`;
+    clauses.push(or(
+      like(assessmentRequests.fullName, term),
+      like(assessmentRequests.email, term),
+      like(assessmentRequests.organisation, term),
+      like(assessmentRequests.sitePostcode, term),
+    ));
+  }
+  const where = clauses.length ? and(...clauses) : undefined;
+  const ordering = options.sort === "oldest" ? asc(assessmentRequests.createdAt) : desc(assessmentRequests.createdAt);
+  const [items, totalResult, grouped] = await Promise.all([
+    db.select().from(assessmentRequests).where(where).orderBy(ordering).limit(options.limit).offset((options.page - 1) * options.limit),
+    db.select({ total: count() }).from(assessmentRequests).where(where),
+    db.select({ status: assessmentRequests.status, total: count() }).from(assessmentRequests).groupBy(assessmentRequests.status),
+  ]);
+
+  const statusCounts = { new: 0, contacted: 0, qualified: 0, closed: 0 };
+  grouped.forEach((entry) => { statusCounts[entry.status] = Number(entry.total); });
+  return { items, total: Number(totalResult[0]?.total ?? 0), statusCounts };
+}
+
+export async function updateAssessmentStatus(id: number, status: "new" | "contacted" | "qualified" | "closed") {
+  const db = await getDb();
+  if (!db) throw new Error("Assessment storage is temporarily unavailable");
+  await db.update(assessmentRequests).set({ status }).where(eq(assessmentRequests.id, id));
+}
+
+export async function deleteAssessmentRequest(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Assessment storage is temporarily unavailable");
+  await db.delete(assessmentRequests).where(eq(assessmentRequests.id, id));
 }

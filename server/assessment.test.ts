@@ -2,10 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createAssessmentRequest: vi.fn(),
+  listAssessmentRequests: vi.fn(),
+  updateAssessmentStatus: vi.fn(),
+  deleteAssessmentRequest: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
   createAssessmentRequest: mocks.createAssessmentRequest,
+  listAssessmentRequests: mocks.listAssessmentRequests,
+  updateAssessmentStatus: mocks.updateAssessmentStatus,
+  deleteAssessmentRequest: mocks.deleteAssessmentRequest,
 }));
 
 import { assessmentInputSchema, appRouter } from "./routers";
@@ -55,5 +61,23 @@ describe("assessment input validation", () => {
       source: "website",
       retentionReviewAt: expect.any(Date),
     }));
+  });
+
+  it("returns assessment records to an admin caller", async () => {
+    mocks.listAssessmentRequests.mockResolvedValue({
+      items: [], total: 0, statusCounts: { new: 0, contacted: 0, qualified: 0, closed: 0 },
+    });
+    const ctx = { user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext;
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.assessment.list({ page: 1, limit: 20, sort: "newest" })).resolves.toMatchObject({ total: 0 });
+    expect(mocks.listAssessmentRequests).toHaveBeenCalledWith({ page: 1, limit: 20, sort: "newest" });
+  });
+
+  it("rejects assessment records for a non-admin caller", async () => {
+    const ctx = { user: { id: 1, role: "user" }, req: {}, res: {} } as TrpcContext;
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.assessment.list({ page: 1, limit: 20, sort: "newest" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

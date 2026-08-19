@@ -1,9 +1,9 @@
 import { COOKIE_NAME } from "@shared/const";
 import { z } from "zod";
-import { createAssessmentRequest } from "./db";
+import { createAssessmentRequest, deleteAssessmentRequest, listAssessmentRequests, updateAssessmentStatus } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 
 export const assessmentInputSchema = z.object({
   fullName: z.string().trim().min(2, "Enter your name").max(160),
@@ -58,6 +58,24 @@ export const appRouter = router({
         retentionReviewAt,
       });
 
+      return { success: true } as const;
+    }),
+    list: adminProcedure.input(z.object({
+      search: z.string().trim().max(160).optional(),
+      status: z.enum(["new", "contacted", "qualified", "closed"]).optional(),
+      page: z.number().int().min(1).default(1),
+      limit: z.number().int().min(5).max(50).default(20),
+      sort: z.enum(["newest", "oldest"]).default("newest"),
+    })).query(({ input }) => listAssessmentRequests(input)),
+    updateStatus: adminProcedure.input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(["new", "contacted", "qualified", "closed"]),
+    })).mutation(async ({ input }) => {
+      await updateAssessmentStatus(input.id, input.status);
+      return { success: true } as const;
+    }),
+    delete: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+      await deleteAssessmentRequest(input.id);
       return { success: true } as const;
     }),
   }),

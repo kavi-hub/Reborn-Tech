@@ -1,0 +1,11 @@
+{
+  "task_kind": "new-document",
+  "output": "pdf",
+  "signals": ["privacy information", "business document"],
+  "hard_constraints": ["A4 portrait", "downloadable public document", "current controller must be Bulk GSM T/a Reborn"],
+  "content_features": {
+    "code_blocks": 0,
+    "defined_terms": 0,
+    "portrait_images": 0
+  }
+}

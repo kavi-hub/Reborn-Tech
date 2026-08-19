@@ -64,3 +64,9 @@
 - [x] Identify the current website controller as Bulk GSM T/a Reborn, with an explicit future-company transition note where appropriate.
 - [x] Apply a minimum-purpose enquiry retention position that avoids holding personal enquiry data indefinitely.
 - [x] Add an impactful, clearly labelled illustrative customer outcome inspired by Brian Hurting, ready for later factual refinement and approval.
+
+## Operations and document access
+
+- [x] Add a protected Reborn operations dashboard with enquiry search, status management and detailed assessment records.
+- [x] Add a smooth, accessible assessment-success animation and clear post-submission confirmation message.
+- [x] Publish a downloadable Privacy Information PDF and link it from the public privacy page.
