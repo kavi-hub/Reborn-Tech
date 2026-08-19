@@ -6,4 +6,4 @@
 - [ ] Build the public ITAD-first website, presenting repair as one reuse outcome rather than the primary offer.
 - [ ] Provision a transparent future customer-portal entry point without implementing authentication or role-based data access.
 - [ ] Produce the approved impact-film treatment: collection, sorting, secure processing, repair / recycling, redistribution and human outcome.
-- [ ] Commit and push the completed Reborn Tech website source to the new `reborn-tech` GitHub repository.
+- [x] Commit and push the completed Reborn Tech website source to the new `reborn-tech` GitHub repository (`main`, commit `131af60`).
