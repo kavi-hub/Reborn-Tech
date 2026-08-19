@@ -1,0 +1,54 @@
+import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+
+/**
+ * Core user table backing auth flow.
+ * Extend this file with additional tables as your product grows.
+ * Columns use camelCase to match both database fields and generated types.
+ */
+export const users = mysqlTable("users", {
+  /**
+   * Surrogate primary key. Auto-incremented numeric value managed by the database.
+   * Use this for relations between tables.
+   */
+  id: int("id").autoincrement().primaryKey(),
+  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  name: text("name"),
+  email: varchar("email", { length: 320 }),
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Public ITAD assessment submissions. These records are intentionally independent
+ * of authenticated users so a prospective customer can enquire without an account.
+ */
+export const assessmentRequests = mysqlTable("assessmentRequests", {
+  id: int("id").autoincrement().primaryKey(),
+  status: mysqlEnum("status", ["new", "contacted", "qualified", "closed"]).default("new").notNull(),
+  fullName: varchar("fullName", { length: 160 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 64 }),
+  organisation: varchar("organisation", { length: 255 }).notNull(),
+  jobTitle: varchar("jobTitle", { length: 160 }),
+  sitePostcode: varchar("sitePostcode", { length: 24 }),
+  assetCategories: varchar("assetCategories", { length: 700 }).notNull(),
+  approximateAssetCount: varchar("approximateAssetCount", { length: 80 }),
+  collectionTimeline: varchar("collectionTimeline", { length: 80 }),
+  dataSecurityRequirement: varchar("dataSecurityRequirement", { length: 160 }),
+  hasInventory: boolean("hasInventory").default(false).notNull(),
+  requiresOnSiteErasure: boolean("requiresOnSiteErasure").default(false).notNull(),
+  notes: text("notes"),
+  source: varchar("source", { length: 64 }).default("website").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AssessmentRequest = typeof assessmentRequests.$inferSelect;
+export type InsertAssessmentRequest = typeof assessmentRequests.$inferInsert;

@@ -3,9 +3,9 @@
 - [x] Preserve the existing website as **Reborn Handset Repair Website**; the legacy source is dated, tagged and archived.
 - [x] Position the new brand around secure ITAD and second life with the working tagline: **“Secure ITAD. Second life, verified.”**
 - [x] Use **Bulk GSM is a Securaze UK partner** as an approved proof point; retain evidence gates for all other standards, licences, logos and data-erasure wording.
-- [ ] Build the public ITAD-first website, presenting repair as one reuse outcome rather than the primary offer.
-- [ ] Provision a transparent future customer-portal entry point without implementing authentication or role-based data access.
-- [ ] Produce the approved impact-film treatment: collection, sorting, secure processing, repair / recycling, redistribution and human outcome.
+- [x] Build the public ITAD-first website, presenting repair as one reuse outcome rather than the primary offer.
+- [x] Provision a transparent future customer-portal entry point without implementing authentication or role-based data access.
+- [x] Produce the approved impact-film treatment: collection, sorting, secure processing, repair / recycling, redistribution and human outcome.
 - [x] Commit and push the completed Reborn Tech website source to the new `reborn-tech` GitHub repository (`main`, commit `131af60`).
 
 ## Refinement request — 19 August 2026
@@ -17,7 +17,7 @@
 
 ## Next approved workstream
 
-- [ ] Add a live ITAD assessment form that records customer enquiries and supports operational follow-up.
+- [x] Add a live ITAD assessment form that records customer enquiries and supports operational follow-up.
 - [x] Retain the illustrative hero-film sequence rather than replacing it with real Reborn operational footage at this stage.
 - [ ] Review and approve the final Reborn wordmark / Reborn Tech lock-up after the above items are complete.
 
@@ -31,3 +31,9 @@
 
 - [x] Restore the original Reborn Tech open-loop icon in the header and footer.
 - [x] Add a high-contrast background treatment behind the open-loop icon so it reads clearly at all sizes.
+
+## Live ITAD assessment form
+
+- [x] Store customer assessment enquiries securely for Reborn operational follow-up.
+- [x] Capture contact, organisation, location, asset scope, collection timing, data-security requirements and optional notes.
+- [x] Provide a clear confirmation state and reserve the data model for the later role-based customer / admin portal.

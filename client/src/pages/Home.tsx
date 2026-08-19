@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AssessmentForm } from "@/components/AssessmentForm";
 
 const ASSETS = {
   hero: "/manus-storage/reborn-itad-hero-asset-journey_e654ae29.jpg",
@@ -288,7 +289,7 @@ export default function Home() {
           <p className="contact-cue">OPEN A NEW ASSET ROUTE / 00</p>
           <h2 id="contact-title">Ready to put your retired IT to work?</h2>
           <p>Send us a rough inventory, site details and collection timing. We will map a route that protects your data and makes the most of what remains.</p>
-          <a className="button button-lime contact-button" href="mailto:info@bulkgsm.com?subject=Reborn%20Tech%20ITAD%20enquiry">Start an assessment <ArrowUpRight size={18} /></a>
+          <AssessmentForm />
         </section>
       </main>
 
