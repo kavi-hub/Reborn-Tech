@@ -1,5 +1,6 @@
 /** Material Trace evidence pages: focused operational detail that deepens buyer confidence without becoming a generic brochure. */
 import { ArrowUpRight, Check, FileCheck2, HeartHandshake, LockKeyhole, Route, ScanLine, ShieldCheck } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { SiteFooter, SiteHeader } from "@/components/PublicChrome";
 
 const assets = {
@@ -16,6 +17,19 @@ function AssessmentBand() {
   return <section className="page-assessment-band"><p className="asset-label"><span className="label-dot" />START WITH THE FACTS</p><div><h2>Tell us what is leaving site. We will map its route.</h2><a className="button button-lime" href="/#contact">Request an ITAD assessment <ArrowUpRight size={18} /></a></div></section>;
 }
 
+const faqs = [
+  ["What should we prepare before an ITAD assessment?", "A rough asset inventory is useful, but it is not essential. Start with the sites involved, the likely asset categories and quantity, collection timing, access constraints, any data-security requirements, and the outcome you are trying to achieve."],
+  ["Can Reborn support collections from more than one location?", "Yes. Include each site in the assessment and we will scope collection and handover requirements around the estate, rather than forcing every location into the same route."],
+  ["How is reuse distinguished from recycling?", "Assets are secured, assessed and tested before a next step is agreed. Viable equipment may be suitable for repair, refurbishment, reuse or resale. Equipment that cannot return to use moves into a responsible material-recovery route."],
+  ["How should we approach data erasure?", "Tell us what evidence or operating requirement applies to your organisation. Reborn can incorporate a defined erasure route and appropriate records into the assessment, using its Securaze UK partner capability where suitable."],
+  ["Can social impact form part of the route?", "Yes, where an asset is suitable and the destination is agreed in advance. Impact is treated as a documented outcome alongside security, reuse and recovery—not as an assumed claim."],
+  ["Is there customer visibility after collection?", "The first release of the customer portal is being designed around collection progress, asset records, evidence and outcome reporting. Register your interest through the assessment form so we can scope the visibility you need."],
+];
+
+function ItadFaq() {
+  return <section className="faq-section" aria-labelledby="faq-title"><div className="faq-heading"><p className="asset-label dark-label"><span className="label-dot" />PRACTICAL QUESTIONS / CLEAR ROUTES</p><h2 id="faq-title">The first questions are usually the important ones.</h2><p>Use the assessment form if your situation is specific. We will help establish the facts before proposing a route.</p></div><Accordion type="single" collapsible className="faq-list">{faqs.map(([question, answer], index) => <AccordionItem key={question} value={`faq-${index}`} className="faq-item"><AccordionTrigger className="faq-trigger"><span>0{index + 1}</span>{question}</AccordionTrigger><AccordionContent className="faq-content"><p>{answer}</p></AccordionContent></AccordionItem>)}</Accordion></section>;
+}
+
 export function ServicesPage() {
   const routes = [
     ["01", "Plan & collect", "Site scope, collection planning and controlled transfer of custody."],
@@ -26,7 +40,7 @@ export function ServicesPage() {
   ];
   return <div className="site-shell"><SiteHeader active="Services" /><main className="page-main"><PageLead eyebrow="THE ITAD ROUTE" route="SERVICE MAP / 01" title="One asset estate. More than one responsible outcome." body="Reborn Tech handles the decision points that sit behind IT asset disposition: collection, security, value recovery, reuse and final material recovery." />
     <section className="service-map"><div className="service-map-visual"><img src={assets.processing} alt="IT asset processing and evidence capture" /><span>RECORD THE ROUTE / BEFORE VALUE</span></div><div className="service-map-list">{routes.map(([number, title, body]) => <article key={number}><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>)}</div></section>
-    <section className="service-note"><p className="asset-label dark-label"><span className="label-dot" />THE DECISION STANDARD</p><h2>Repair is not the product. <em>The right outcome is.</em></h2><p>We treat repair as one controlled route within a broader ITAD decision. The objective is a safe, traceable next step for every asset—not an assumed result for all of them.</p></section><AssessmentBand /></main><SiteFooter /></div>;
+    <section className="service-note"><p className="asset-label dark-label"><span className="label-dot" />THE DECISION STANDARD</p><h2>Repair is not the product. <em>The right outcome is.</em></h2><p>We treat repair as one controlled route within a broader ITAD decision. The objective is a safe, traceable next step for every asset—not an assumed result for all of them.</p></section><ItadFaq /><AssessmentBand /></main><SiteFooter /></div>;
 }
 
 export function SecurityPage() {

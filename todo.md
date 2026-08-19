@@ -51,3 +51,10 @@
 - [x] Add a Security & compliance page for chain of custody, data-erasure evidence and verifiable governance claims.
 - [x] Add an Impact & partners page that gives StayWell and Securaze UK suitable evidence-led prominence.
 - [x] Reduce the desktop hero text panel so more of the film remains visible.
+
+## Continued evidence-led expansion
+
+- [x] Add a public Reborn capability statement that identifies the Bulk GSM joint venture and the two operating hubs without overstating unverified credentials.
+- [x] Strengthen enquiry conversion with clearer service-page routes back to the live assessment intake.
+- [x] Add structured placeholders for customer outcome evidence without publishing invented case studies.
+- [x] Add a focused public ITAD FAQ to reduce procurement friction around collection, data handling, reuse, recycling and impact routes.

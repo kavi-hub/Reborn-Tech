@@ -136,7 +136,7 @@ export default function Home() {
             <h2>Old IT is not the end of a story. It is a decision point.</h2>
             <div>
               <p>Your hardware may contain data, residual value, usable materials and the potential for a useful second life. We help you deal with all of it—without losing the evidence along the way.</p>
-              <a className="text-link dark-link" href="#services">Explore our ITAD routes <ChevronRight size={18} /></a>
+              <a className="text-link dark-link" href="/services">Explore our ITAD routes <ChevronRight size={18} /></a>
             </div>
           </div>
         </section>
@@ -200,6 +200,19 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="outcome-ledger" aria-labelledby="outcome-ledger-title">
+          <div className="outcome-ledger-head">
+            <p className="asset-label"><span className="label-dot" />OUTCOME EVIDENCE / READY TO RECORD</p>
+            <h2 id="outcome-ledger-title">Every route should leave a useful record.</h2>
+          </div>
+          <div className="outcome-ledger-grid">
+            <article><span>01 / CONTEXT</span><h3>What left site</h3><p>Asset class, quantity, collection location and agreed operating requirements.</p></article>
+            <article><span>02 / CONTROL</span><h3>What was secured</h3><p>Asset recording, agreed data-handling route and relevant process evidence.</p></article>
+            <article><span>03 / OUTCOME</span><h3>What happened next</h3><p>Reuse, recovery, resale or an agreed impact route—recorded without invented statistics.</p></article>
+          </div>
+          <p className="outcome-ledger-note">Customer outcome snapshots will appear here only where the scope, figures and attribution are approved.</p>
+        </section>
+
         <section className="renewal-section" aria-labelledby="renewal-title">
           <div className="renewal-copy">
             <p className="asset-label"><span className="label-dot" />REPAIR IS ONE ROUTE</p>
@@ -218,11 +231,27 @@ export default function Home() {
             <h2 id="impact-title">A device can become access.</h2>
             <p>When a usable asset is given the right route, it can return as a tool for learning, work, connection or community. That is why outcome matters as much as disposal.</p>
             <div className="impact-actions">
-              <a className="button button-lime" href="#contact">Talk about an impact route <ArrowUpRight size={18} /></a>
-              <span><HeartHandshake size={19} />Impact partnerships, including StayWell</span>
+              <a className="button button-lime" href="/impact">Explore impact routes <ArrowUpRight size={18} /></a>
+              <a className="impact-inline-link" href="/impact"><HeartHandshake size={19} />Impact partnerships, including StayWell</a>
             </div>
           </div>
           <p className="impact-caption">Impact routes are agreed, evidenced and reported—never assumed.</p>
+        </section>
+
+        <section className="capability-section" aria-labelledby="capability-title">
+          <div className="capability-heading">
+            <p className="asset-label dark-label"><span className="label-dot" />REBORN / VERIFIED STRUCTURE</p>
+            <h2 id="capability-title">Built on Bulk GSM capability. Designed for the full ITAD decision.</h2>
+          </div>
+          <div className="capability-copy">
+            <p>Reborn Tech is a Bulk GSM company created as a joint venture between Bulk GSM and two independent industry veterans. It combines an established trading and collection base with specialist experience in processing, recovery and second-life decisions.</p>
+            <a className="text-link dark-link" href="/services">See how the route works <ChevronRight size={18} /></a>
+          </div>
+          <div className="capability-strip" aria-label="Reborn operational capabilities">
+            <article><span>HUB / 01</span><strong>London</strong><p>Collection, intake and ITAD operations through the Bulk GSM hub.</p></article>
+            <article><span>HUB / 02</span><strong>Chorley</strong><p>Processing, repair and recovery operations at Coppull Mill.</p></article>
+            <article><span>MODEL / JV</span><strong>One joined route</strong><p>Collection, security, reuse and recovery designed as one accountable process.</p></article>
+          </div>
         </section>
 
         <section id="locations" className="locations-section" aria-labelledby="locations-title">
