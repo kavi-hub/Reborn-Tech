@@ -1,7 +1,8 @@
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { assignCustomerOrganisationMember, assignCustomerViewerByOrganisationAdmin, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, updateAssessmentStatus, updateCollectionStatus } from "./db";
+import { assignCustomerViewerByOrganisationAdmin, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getMagicPortalAttachment, getMagicPortalOverview, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, updateAssessmentStatus, updateCollectionStatus } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -132,15 +133,17 @@ export const appRouter = router({
       await createCollectionAuditEvent({ collectionId: input.id, eventType: "status_changed", summary: `Collection status changed to ${input.status.replaceAll("_", " ")}`, customerVisible: true, actorUserId: ctx.user.id });
       return { success: true } as const;
     }),
-    assignMember: adminProcedure.input(z.object({
+    createInvitation: adminProcedure.input(z.object({
       organisationId: z.number().int().positive(),
       email: z.string().trim().email().max(320),
-      role: z.enum(["admin", "viewer"]),
+      role: z.enum(["admin", "viewer"]).default("viewer"),
     })).mutation(async ({ ctx, input }) => {
-      await assignCustomerOrganisationMember(input);
+      const token = randomBytes(24).toString("base64url");
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await createCustomerPortalInvitation({ ...input, token, expiresAt, createdByUserId: ctx.user.id });
       const collectionIds = await listCollectionIdsForOrganisation(input.organisationId);
-      await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: `Customer portal ${input.role} access assigned`, customerVisible: false, actorUserId: ctx.user.id })));
-      return { success: true } as const;
+      await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: `Customer portal invitation created for ${input.role} access`, customerVisible: false, actorUserId: ctx.user.id })));
+      return { token, expiresAt };
     }),
     listAudit: adminProcedure.input(z.object({ collectionId: z.number().int().positive(), page: z.number().int().min(1).default(1), pageSize: z.number().int().min(1).max(25).default(8) })).query(({ input }) => listAdminCollectionAuditEvents(input.collectionId, input.page, input.pageSize)),
     listAttachments: adminProcedure.input(z.object({ collectionId: z.number().int().positive() })).query(({ input }) => listAdminCollectionAttachments(input.collectionId)),
@@ -166,6 +169,7 @@ export const appRouter = router({
     }),
   }),
   customerPortal: router({
+    claimInvitation: protectedProcedure.input(z.object({ token: z.string().min(20).max(128) })).mutation(({ ctx, input }) => claimCustomerPortalInvitation({ token: input.token, userId: ctx.user.id, email: ctx.user.email ?? null })),
     collections: protectedProcedure.query(({ ctx }) => listCustomerPortalCollections(ctx.user.id)),
     attachments: protectedProcedure.query(({ ctx }) => listCustomerCollectionAttachments(ctx.user.id)),
     auditEvents: protectedProcedure.input(z.object({ page: z.number().int().min(1).default(1), pageSize: z.number().int().min(1).max(25).default(8) })).query(({ ctx, input }) => listCustomerCollectionAuditEvents(ctx.user.id, input.page, input.pageSize)),
@@ -182,6 +186,13 @@ export const appRouter = router({
       const collectionIds = await listCollectionIdsForOrganisation(input.organisationId);
       await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: "Customer portal viewer access granted", customerVisible: false, actorUserId: ctx.user.id })));
       return { success: true } as const;
+    }),
+  }),
+  magicPortal: router({
+    overview: publicProcedure.input(z.object({ token: z.string().min(20).max(128) })).query(({ input }) => getMagicPortalOverview(input.token)),
+    downloadAttachment: publicProcedure.input(z.object({ token: z.string().min(20).max(128), attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
+      const attachment = await getMagicPortalAttachment(input.token, input.attachmentId);
+      return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
     }),
   }),
 });

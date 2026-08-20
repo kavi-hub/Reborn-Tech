@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   listCustomerPortalCollections: vi.fn(),
   updateCollectionStatus: vi.fn(),
   assignCustomerOrganisationMember: vi.fn(),
+  createCustomerPortalInvitation: vi.fn(),
+  claimCustomerPortalInvitation: vi.fn(),
+  getMagicPortalOverview: vi.fn(),
+  getMagicPortalAttachment: vi.fn(),
   assignCustomerViewerByOrganisationAdmin: vi.fn(),
   getCustomerOrganisationMembership: vi.fn(),
   createCollectionAttachment: vi.fn(),
@@ -39,6 +43,10 @@ vi.mock("./db", () => ({
   listCustomerPortalCollections: mocks.listCustomerPortalCollections,
   updateCollectionStatus: mocks.updateCollectionStatus,
   assignCustomerOrganisationMember: mocks.assignCustomerOrganisationMember,
+  createCustomerPortalInvitation: mocks.createCustomerPortalInvitation,
+  claimCustomerPortalInvitation: mocks.claimCustomerPortalInvitation,
+  getMagicPortalOverview: mocks.getMagicPortalOverview,
+  getMagicPortalAttachment: mocks.getMagicPortalAttachment,
   assignCustomerViewerByOrganisationAdmin: mocks.assignCustomerViewerByOrganisationAdmin,
   getCustomerOrganisationMembership: mocks.getCustomerOrganisationMembership,
   createCollectionAttachment: mocks.createCollectionAttachment,
@@ -214,5 +222,56 @@ describe("assessment input validation", () => {
     const customer = appRouter.createCaller({ user: { id: 82, role: "user" }, req: {}, res: {} } as TrpcContext);
     await expect(customer.customerPortal.auditEvents({ page: 2, pageSize: 6 })).resolves.toEqual({ events: [], total: 0 });
     expect(mocks.listCustomerCollectionAuditEvents).toHaveBeenCalledWith(82, 2, 6);
+  });
+
+  it("lets an admin pre-provision a time-limited customer invitation", async () => {
+    mocks.listCollectionIdsForOrganisation.mockResolvedValue([{ id: 31 }]);
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    const result = await admin.collections.createInvitation({ organisationId: 4, email: "client@example.com", role: "viewer" });
+
+    expect(result.token).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(result.expiresAt).toBeInstanceOf(Date);
+    expect(mocks.createCustomerPortalInvitation).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 4, email: "client@example.com", role: "viewer", createdByUserId: 7 }));
+    expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 31, eventType: "customer_access_changed", actorUserId: 7 }));
+  });
+
+  it("claims an invited customer portal link for the authenticated work email", async () => {
+    mocks.claimCustomerPortalInvitation.mockResolvedValue({ alreadyClaimed: false });
+    const customer = appRouter.createCaller({ user: { id: 82, email: "client@example.com", role: "user" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(customer.customerPortal.claimInvitation({ token: "z".repeat(24) })).resolves.toEqual({ alreadyClaimed: false });
+    expect(mocks.claimCustomerPortalInvitation).toHaveBeenCalledWith({ token: "z".repeat(24), userId: 82, email: "client@example.com" });
+  });
+
+  it("opens only token-scoped customer portal data without requiring a user session", async () => {
+    mocks.getMagicPortalOverview.mockResolvedValue({ organisation: { id: 4, name: "Northwind Services" }, collections: [], attachments: [], events: [] });
+    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
+
+    await expect(publicCaller.magicPortal.overview({ token: "p".repeat(24) })).resolves.toMatchObject({ organisation: { id: 4 } });
+    expect(mocks.getMagicPortalOverview).toHaveBeenCalledWith("p".repeat(24));
+  });
+
+  it("rejects invalid and expired direct invitation tokens", async () => {
+    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
+    mocks.getMagicPortalOverview.mockRejectedValueOnce(new Error("This invitation is not recognised"));
+    await expect(publicCaller.magicPortal.overview({ token: "i".repeat(24) })).rejects.toThrow("not recognised");
+    mocks.getMagicPortalOverview.mockRejectedValueOnce(new Error("This invitation has expired"));
+    await expect(publicCaller.magicPortal.overview({ token: "e".repeat(24) })).rejects.toThrow("expired");
+  });
+
+  it("rejects a magic-link file request outside its customer-visible organisation scope", async () => {
+    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
+    mocks.getMagicPortalAttachment.mockRejectedValueOnce(new Error("This file is not available through the invitation link"));
+    await expect(publicCaller.magicPortal.downloadAttachment({ token: "f".repeat(24), attachmentId: 91 })).rejects.toThrow("not available");
+  });
+
+  it("releases a customer-visible document from the invited organisation through a signed URL", async () => {
+    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
+    mocks.getMagicPortalAttachment.mockResolvedValueOnce({ storageKey: "collection-routes/4/inventory.pdf", fileName: "inventory.pdf" });
+    mocks.storageGetSignedUrl.mockResolvedValueOnce("https://files.example.com/signed-inventory");
+
+    await expect(publicCaller.magicPortal.downloadAttachment({ token: "a".repeat(24), attachmentId: 8 })).resolves.toEqual({ url: "https://files.example.com/signed-inventory", fileName: "inventory.pdf" });
+    expect(mocks.getMagicPortalAttachment).toHaveBeenCalledWith("a".repeat(24), 8);
   });
 });

@@ -1,0 +1,14 @@
+/* Reborn invitation handoff: one purpose, one prepared link, one customer click. */
+.collection-invite { display: grid; grid-template-columns: 1.3fr .85fr .65fr auto; gap: 13px; align-items: end; margin-top: 25px; padding: 21px; background: #e5edcf; border-left: 3px solid var(--mineral); }
+.collection-invite > div:first-child { grid-column: 1 / -1; }
+.collection-invite h3 { margin: 6px 0; font-size: 22px; letter-spacing: -.055em; }
+.collection-invite p:not(.ops-kicker) { max-width: 690px; margin: 0; color: #4e5c4e; font-size: 12px; line-height: 1.5; }
+.collection-invite label { display: flex; flex-direction: column; gap: 6px; color: #385041; font-size: 10px; font-weight: 700; }
+.collection-invite input, .collection-invite select { min-height: 42px; border: 1px solid rgba(32,75,62,.34); border-radius: 0; background: #fffefa; padding: 9px; color: var(--ink); font: 500 12px "Space Grotesk", sans-serif; }
+.invite-ready { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(160px, 1fr) auto auto; gap: 10px; align-items: center; padding: 12px; background: var(--paper-light); border: 1px solid rgba(32,75,62,.24); }
+.invite-ready strong { color: var(--mineral); font-size: 12px; }
+.invite-ready code { overflow: hidden; color: #566155; font: 500 10px "IBM Plex Mono", monospace; white-space: nowrap; text-overflow: ellipsis; }
+.invite-ready button, .invite-ready a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px solid var(--mineral); background: transparent; color: var(--mineral); font-size: 11px; font-weight: 700; cursor: pointer; }
+.invite-ready a { background: var(--mineral); color: var(--paper-light); }
+@media (max-width: 900px) { .collection-invite { grid-template-columns: 1fr 1fr; }.collection-invite > .button { grid-column: 1 / -1; }.invite-ready { grid-template-columns: 1fr 1fr; }.invite-ready code { grid-column: 1 / -1; } }
+@media (max-width: 560px) { .collection-invite { grid-template-columns: 1fr; }.invite-ready { grid-template-columns: 1fr; }.invite-ready > * { width: 100%; }.invite-ready code { max-width: 100%; }.invite-ready button, .invite-ready a { width: 100%; } }

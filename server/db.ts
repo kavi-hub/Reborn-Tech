@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, like, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
+import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalInvitations, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -71,10 +71,50 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
     });
+    if (user.email) {
+      await claimPendingInvitationsForEmail(user.openId, user.email);
+    }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
   }
+}
+
+async function claimPendingInvitationsForEmail(openId: string, email: string) {
+  const db = await getDb();
+  if (!db) return;
+  const currentUser = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  if (!currentUser[0]) return;
+  const now = new Date();
+  const invitations = await db.select().from(customerPortalInvitations).where(and(eq(customerPortalInvitations.email, email.toLowerCase()), eq(customerPortalInvitations.status, "pending"), gt(customerPortalInvitations.expiresAt, now)));
+  for (const invitation of invitations) {
+    await claimInvitationRecord(invitation, currentUser[0].id, now);
+  }
+}
+
+async function claimInvitationRecord(invitation: typeof customerPortalInvitations.$inferSelect, userId: number, claimedAt: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const existingMembership = await db.select().from(customerOrganisationMembers).where(and(eq(customerOrganisationMembers.organisationId, invitation.organisationId), eq(customerOrganisationMembers.userId, userId))).limit(1);
+  if (existingMembership[0]) {
+    await db.update(customerOrganisationMembers).set({ role: invitation.role }).where(eq(customerOrganisationMembers.id, existingMembership[0].id));
+  } else {
+    await db.insert(customerOrganisationMembers).values({ organisationId: invitation.organisationId, userId, role: invitation.role });
+  }
+  await db.update(customerPortalInvitations).set({ status: "claimed", claimedByUserId: userId, claimedAt }).where(eq(customerPortalInvitations.id, invitation.id));
+}
+
+export async function claimCustomerPortalInvitation(input: { token: string; userId: number; email: string | null }) {
+  if (!input.email) throw new Error("Your signed-in account does not have a work email");
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const invitation = await db.select().from(customerPortalInvitations).where(eq(customerPortalInvitations.token, input.token)).limit(1);
+  if (!invitation[0]) throw new Error("This portal invitation is not recognised");
+  if (invitation[0].status === "claimed" && invitation[0].claimedByUserId === input.userId) return { alreadyClaimed: true };
+  if (invitation[0].status !== "pending" || invitation[0].expiresAt <= new Date()) throw new Error("This portal invitation is no longer active");
+  if (invitation[0].email !== input.email.toLowerCase()) throw new Error("Please sign in with the work email that received this invitation");
+  await claimInvitationRecord(invitation[0], input.userId, new Date());
+  return { alreadyClaimed: false };
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -257,17 +297,12 @@ export async function listCollectionIdsForOrganisation(organisationId: number) {
   return db.select({ id: collectionTracks.id }).from(collectionTracks).where(eq(collectionTracks.organisationId, organisationId));
 }
 
-export async function assignCustomerOrganisationMember(input: { organisationId: number; email: string; role: "admin" | "viewer" }) {
+export async function createCustomerPortalInvitation(input: { organisationId: number; email: string; role: "admin" | "viewer"; token: string; expiresAt: Date; createdByUserId: number }) {
   const db = await getDb();
   if (!db) throw new Error("Customer portal storage is temporarily unavailable");
-  const user = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
-  if (!user[0]) throw new Error("This person needs to sign in to the portal once before their role can be assigned");
-  const existing = await db.select().from(customerOrganisationMembers).where(and(eq(customerOrganisationMembers.organisationId, input.organisationId), eq(customerOrganisationMembers.userId, user[0].id))).limit(1);
-  if (existing[0]) {
-    await db.update(customerOrganisationMembers).set({ role: input.role }).where(eq(customerOrganisationMembers.id, existing[0].id));
-  } else {
-    await db.insert(customerOrganisationMembers).values({ organisationId: input.organisationId, userId: user[0].id, role: input.role });
-  }
+  const email = input.email.toLowerCase();
+  await db.update(customerPortalInvitations).set({ status: "revoked" }).where(and(eq(customerPortalInvitations.organisationId, input.organisationId), eq(customerPortalInvitations.email, email), eq(customerPortalInvitations.status, "pending")));
+  await db.insert(customerPortalInvitations).values({ ...input, email });
 }
 
 export async function assignCustomerViewerByOrganisationAdmin(input: { actorUserId: number; organisationId: number; email: string }) {
@@ -339,4 +374,38 @@ export async function listCustomerPortalCollections(userId: number) {
     .innerJoin(collectionTracks, eq(collectionTracks.organisationId, customerOrganisations.id))
     .where(eq(customerOrganisationMembers.userId, userId))
     .orderBy(desc(collectionTracks.createdAt));
+}
+
+async function getActivePortalInvitation(token: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const invitation = await db.select().from(customerPortalInvitations).where(eq(customerPortalInvitations.token, token)).limit(1);
+  if (!invitation[0] || invitation[0].status === "revoked") throw new Error("This invitation is not recognised");
+  if (invitation[0].expiresAt <= new Date()) {
+    if (invitation[0].status !== "expired") await db.update(customerPortalInvitations).set({ status: "expired" }).where(eq(customerPortalInvitations.id, invitation[0].id));
+    throw new Error("This invitation has expired");
+  }
+  if (invitation[0].status === "pending") await db.update(customerPortalInvitations).set({ status: "claimed", claimedAt: new Date() }).where(eq(customerPortalInvitations.id, invitation[0].id));
+  return invitation[0];
+}
+
+export async function getMagicPortalOverview(token: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const invitation = await getActivePortalInvitation(token);
+  const organisation = await db.select().from(customerOrganisations).where(eq(customerOrganisations.id, invitation.organisationId)).limit(1);
+  if (!organisation[0]) throw new Error("This invitation’s organisation is unavailable");
+  const collections = await db.select().from(collectionTracks).where(eq(collectionTracks.organisationId, invitation.organisationId)).orderBy(desc(collectionTracks.createdAt));
+  const attachments = await db.select({ attachment: collectionAttachments, collection: collectionTracks }).from(collectionTracks).innerJoin(collectionAttachments, eq(collectionAttachments.collectionId, collectionTracks.id)).where(and(eq(collectionTracks.organisationId, invitation.organisationId), eq(collectionAttachments.customerVisible, true))).orderBy(desc(collectionAttachments.createdAt));
+  const events = await db.select({ event: collectionAuditEvents, collection: collectionTracks }).from(collectionTracks).innerJoin(collectionAuditEvents, eq(collectionAuditEvents.collectionId, collectionTracks.id)).where(and(eq(collectionTracks.organisationId, invitation.organisationId), eq(collectionAuditEvents.customerVisible, true))).orderBy(desc(collectionAuditEvents.createdAt)).limit(20);
+  return { organisation: organisation[0], role: invitation.role, collections, attachments, events, expiresAt: invitation.expiresAt };
+}
+
+export async function getMagicPortalAttachment(token: string, attachmentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  const invitation = await getActivePortalInvitation(token);
+  const attachment = await db.select({ attachment: collectionAttachments }).from(collectionTracks).innerJoin(collectionAttachments, eq(collectionAttachments.collectionId, collectionTracks.id)).where(and(eq(collectionTracks.organisationId, invitation.organisationId), eq(collectionAttachments.id, attachmentId), eq(collectionAttachments.customerVisible, true))).limit(1);
+  if (!attachment[0]) throw new Error("This file is not available through the invitation link");
+  return attachment[0].attachment;
 }

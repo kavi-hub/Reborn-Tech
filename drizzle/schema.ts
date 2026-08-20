@@ -73,6 +73,21 @@ export const customerOrganisationMembers = mysqlTable("customerOrganisationMembe
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** Pre-provisioned customer access. The invitation email must match the authenticated work email before it can be claimed. */
+export const customerPortalInvitations = mysqlTable("customerPortalInvitations", {
+  id: int("id").autoincrement().primaryKey(),
+  organisationId: int("organisationId").notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  role: mysqlEnum("role", ["admin", "viewer"]).default("viewer").notNull(),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  status: mysqlEnum("status", ["pending", "claimed", "revoked", "expired"]).default("pending").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdByUserId: int("createdByUserId").notNull(),
+  claimedByUserId: int("claimedByUserId"),
+  claimedAt: timestamp("claimedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 /** Collection milestones visible to the Reborn team and scoped customer-organisation members. */
 export const collectionTracks = mysqlTable("collectionTracks", {
   id: int("id").autoincrement().primaryKey(),
@@ -114,6 +129,7 @@ export const collectionAuditEvents = mysqlTable("collectionAuditEvents", {
 
 export type CustomerOrganisation = typeof customerOrganisations.$inferSelect;
 export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inferSelect;
+export type CustomerPortalInvitation = typeof customerPortalInvitations.$inferSelect;
 export type CollectionTrack = typeof collectionTracks.$inferSelect;
 export type CollectionAttachment = typeof collectionAttachments.$inferSelect;
 export type CollectionAuditEvent = typeof collectionAuditEvents.$inferSelect;

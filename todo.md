@@ -98,3 +98,19 @@
 - [x] Add paginated audit-event retrieval for operations and customer-safe portal histories.
 - [x] Enhance the audit view with a clear visual timeline, event markers and timeline summary.
 - [x] Add accessible previous/next navigation without exposing internal-only events to customers.
+
+## Zero-friction portal redesign
+
+- [x] Replace the customer self-registration prerequisite with a Reborn-created, one-click invitation flow.
+- [x] Make the Operations Desk and collection-management entry points discoverable to authenticated Reborn admins.
+- [x] Reduce customer onboarding to an invitation email and one-click access to their assigned information.
+- [x] Assess available Bulk GSM ITAD source repositories for reusable patterns without coupling Reborn to unrelated legacy code; `bulkgsm/itad-dash` is accessible and its invitation-first concept informed this design.
+
+## True invitation onboarding
+
+- [x] Let an invited customer open a time-limited, token-protected portal route directly from the invitation link without a separate OAuth sign-in step.
+- [x] Limit direct invitation access to the invited organisation’s customer-safe collection data and files, with scoped magic-link downloads.
+- [x] Validate invitation creation, direct access, invalid-token handling and expiry behaviour through typed API coverage and the live unavailable-link route.
+- [x] Add typed API coverage for invalid and expired direct invitation tokens.
+- [x] Add typed API coverage proving magic-link document downloads are scoped to customer-visible files in the invited organisation only.
+- [x] Prove both permitted and denied magic-link document downloads through typed API tests.
