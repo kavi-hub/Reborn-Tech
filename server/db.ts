@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobs, users } from "../drizzle/schema";
+import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 
@@ -307,6 +307,38 @@ export async function createItadJobAssetsFromImport(input: { jobId: number; bran
   return input.rows.length;
 }
 
+export async function createSecurazeImportExceptions(input: { importBatchId: number; jobId: number; brand: ItadBrand; rows: Array<{ rowNumber: number; code: "missing_serial" | "missing_result" | "duplicate_serial"; message: string }> }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  await getItadJobForBrand(input.jobId, input.brand);
+  if (!input.rows.length) return 0;
+  await db.insert(itadJobImportExceptions).values(input.rows.map((row) => ({ importBatchId: input.importBatchId, jobId: input.jobId, brand: input.brand, sourceRowNumber: row.rowNumber, code: row.code, message: row.message })));
+  return input.rows.length;
+}
+
+export async function listSecurazeImportExceptions(input: { jobId: number; brand: ItadBrand; importBatchId?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  await getItadJobForBrand(input.jobId, input.brand);
+  const conditions = [eq(itadJobImportExceptions.jobId, input.jobId), eq(itadJobImportExceptions.brand, input.brand)];
+  if (input.importBatchId) conditions.push(eq(itadJobImportExceptions.importBatchId, input.importBatchId));
+  return db.select({ exception: itadJobImportExceptions, importBatch: itadJobImportBatches }).from(itadJobImportExceptions).innerJoin(itadJobImportBatches, eq(itadJobImportExceptions.importBatchId, itadJobImportBatches.id)).where(and(...conditions)).orderBy(desc(itadJobImportExceptions.sourceRowNumber));
+}
+
+export async function findOperationsAdminByEmail(email: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Operations user storage is temporarily unavailable");
+  const user = await db.select().from(users).where(and(eq(users.email, email.toLowerCase()), eq(users.role, "admin"))).limit(1);
+  return user[0] ?? null;
+}
+
+export async function getOperationsUserById(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Operations user storage is temporarily unavailable");
+  const user = await db.select().from(users).where(and(eq(users.id, userId), eq(users.role, "admin"))).limit(1);
+  return user[0] ?? null;
+}
+
 export async function createItadJobEvidenceRecord(input: { jobId: number; assetId?: number; brand: ItadBrand; evidenceType: "data_erasure" | "collection_manifest" | "reuse_outcome" | "recycling_outcome" | "other"; certificateReference?: string; issuer?: string; verificationState: "recorded" | "reviewed" | "verified" | "exception"; evidenceDate?: Date; fileName?: string; contentType?: string; sizeBytes?: number; storageKey?: string; customerVisible: boolean; createdByUserId: number }) {
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
@@ -360,19 +392,23 @@ export async function createItadJobComment(input: { jobId: number; brand: ItadBr
 export async function createItadJobException(input: { jobId: number; brand: ItadBrand; title: string; detail?: string; ownerUserId: number; createdByUserId: number }) {
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
-  await getItadJobForBrand(input.jobId, input.brand);
+  const job = await getItadJobForBrand(input.jobId, input.brand);
   await db.insert(itadJobExceptions).values({ ...input, detail: input.detail ?? null, status: "open" });
   await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: "exception_opened", summary: `Exception opened: ${input.title}`, actorUserId: input.createdByUserId });
+  return { job, title: input.title, ownerUserId: input.ownerUserId };
 }
 
-export async function updateItadJobException(input: { exceptionId: number; jobId: number; brand: ItadBrand; status: "open" | "in_progress" | "resolved"; actorUserId: number; takeOwnership: boolean }) {
+export async function updateItadJobException(input: { exceptionId: number; jobId: number; brand: ItadBrand; status: "open" | "in_progress" | "resolved"; actorUserId: number; takeOwnership: boolean; ownerUserId?: number }) {
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const job = await getItadJobForBrand(input.jobId, input.brand);
   const exception = await db.select().from(itadJobExceptions).where(and(eq(itadJobExceptions.id, input.exceptionId), eq(itadJobExceptions.jobId, input.jobId), eq(itadJobExceptions.brand, input.brand))).limit(1);
   if (!exception[0]) throw new Error("Exception record could not be found in this Core Job");
   const resolved = input.status === "resolved";
-  await db.update(itadJobExceptions).set({ status: input.status, ownerUserId: input.takeOwnership ? input.actorUserId : exception[0].ownerUserId, resolvedByUserId: resolved ? input.actorUserId : null, resolvedAt: resolved ? new Date() : null }).where(eq(itadJobExceptions.id, input.exceptionId));
+  const ownerUserId = input.ownerUserId ?? (input.takeOwnership ? input.actorUserId : exception[0].ownerUserId);
+  await db.update(itadJobExceptions).set({ status: input.status, ownerUserId, resolvedByUserId: resolved ? input.actorUserId : null, resolvedAt: resolved ? new Date() : null }).where(eq(itadJobExceptions.id, input.exceptionId));
   await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: resolved ? "exception_resolved" : "exception_updated", summary: resolved ? `Exception resolved: ${exception[0].title}` : `Exception updated: ${exception[0].title}${input.takeOwnership ? " (ownership accepted)" : ""}`, actorUserId: input.actorUserId });
+  return { job, exception: exception[0], ownerUserId };
 }
 
 export async function getItadJobEvidenceFile(input: { evidenceId: number; jobId: number; brand: ItadBrand }) {

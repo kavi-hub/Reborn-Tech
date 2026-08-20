@@ -151,3 +151,12 @@
 - [x] Add a Core Job activity log for comments and exception lifecycle changes, then show its context to operations.
 - [x] Add negative cross-brand tests for advanced Core import, approval, comments, exception updates and evidence release paths.
 - [x] Add an explicit wrong-brand Core evidence-download rejection test.
+
+## ITAD Core milestone 4 — review, reporting and exception management
+
+- [x] Add a CSV preview-and-confirm workflow that uses the same mapped payload for confirmation and writes nothing until an admin confirms it.
+- [x] Add a downloadable Securaze CSV exception report scoped to the selected Core Job and brand.
+- [x] Add exception status filtering and deterministic sorting to the Core Job operations workspace.
+- [x] Add branded email notifications when an exception is assigned or resolved, using registered operations-admin email addresses only.
+- [x] Add tests for preview-confirm integrity, brand-scoped exception export, filtered exception queries and notification success/failure paths.
+- [x] Add focused automated coverage for Core Job exception filtering and deterministic sort orders.

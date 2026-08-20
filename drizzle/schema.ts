@@ -187,6 +187,18 @@ export const itadJobImportBatches = mysqlTable("itadJobImportBatches", {
   importedAt: timestamp("importedAt").defaultNow().notNull(),
 });
 
+/** Row-level exceptions produced by a confirmed Securaze CSV import, retained for review and export. */
+export const itadJobImportExceptions = mysqlTable("itadJobImportExceptions", {
+  id: int("id").autoincrement().primaryKey(),
+  importBatchId: int("importBatchId").notNull(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  sourceRowNumber: int("sourceRowNumber").notNull(),
+  code: mysqlEnum("code", ["missing_serial", "missing_result", "duplicate_serial"]).notNull(),
+  message: varchar("message", { length: 500 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 /** Internal operational context against a Core Job. Comments are intentionally not exposed to customers. */
 export const itadJobComments = mysqlTable("itadJobComments", {
   id: int("id").autoincrement().primaryKey(),
@@ -257,6 +269,7 @@ export type ItadJob = typeof itadJobs.$inferSelect;
 export type ItadJobAsset = typeof itadJobAssets.$inferSelect;
 export type ItadJobEvidenceRecord = typeof itadJobEvidenceRecords.$inferSelect;
 export type ItadJobImportBatch = typeof itadJobImportBatches.$inferSelect;
+export type ItadJobImportException = typeof itadJobImportExceptions.$inferSelect;
 export type ItadJobComment = typeof itadJobComments.$inferSelect;
 export type ItadJobException = typeof itadJobExceptions.$inferSelect;
 export type ItadJobActivityEvent = typeof itadJobActivityEvents.$inferSelect;
