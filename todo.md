@@ -114,3 +114,20 @@
 - [x] Add typed API coverage for invalid and expired direct invitation tokens.
 - [x] Add typed API coverage proving magic-link document downloads are scoped to customer-visible files in the invited organisation only.
 - [x] Prove both permitted and denied magic-link document downloads through typed API tests.
+
+## Shared ITAD platform assessment
+
+- [x] Assess automatic branded email delivery for customer invitations and collection-status notifications.
+- [x] Define Operations controls for invitation resend, revoke and expiration-state management.
+- [x] Assess the Bulk GSM ITAD Dash architecture and propose a shared multi-tenant backend boundary for Bulk GSM and Reborn.
+- [x] Agree the shared-platform implementation plan before merging or restructuring either production backend.
+
+## ITAD Core milestone 1
+
+- [x] Configure automatic branded invitation and collection-status emails from Reborn Tech <reborn@bulkgsm.com>.
+- [x] Add Operations controls to resend, revoke and inspect invitation expiration and delivery state.
+- [x] Add a shared ITAD Core brand boundary for collection and invitation records usable by both Reborn and Bulk GSM.
+- [x] Keep the Reborn user experience separate while preparing its operational core and audit model for multi-brand use.
+- [x] Add a canonical shared ITAD Core Job model with schema, migration, helpers and APIs, then connect collection routes to it.
+- [x] Implement a Bulk GSM-branded ITAD Dash consumer of the shared Core boundary, without replacing the existing Reborn experience.
+- [x] Add tests covering brand isolation across shared-core collections, invitations and direct-link portal access.

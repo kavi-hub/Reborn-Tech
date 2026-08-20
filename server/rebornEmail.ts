@@ -1,0 +1,33 @@
+/** Reborn transactional email: one server-side sender and visual language for client access and route updates. */
+const sender = "Reborn Tech <reborn@bulkgsm.com>";
+
+const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character);
+
+async function sendEmail(input: { to: string; subject: string; html: string; text: string }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("Transactional email is not configured");
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: sender, to: [input.to], subject: input.subject, html: input.html, text: input.text }),
+  });
+  const payload = await response.json().catch(() => ({})) as { id?: string; message?: string };
+  if (!response.ok || !payload.id) throw new Error(payload.message || "Transactional email could not be sent");
+  return payload.id;
+}
+
+const shell = (title: string, body: string) => `<!doctype html><html><body style="margin:0;background:#f1efe7;color:#1f2521;font-family:Arial,sans-serif"><table width="100%" cellspacing="0" cellpadding="0" role="presentation"><tr><td style="padding:36px 18px"><table width="100%" cellspacing="0" cellpadding="0" role="presentation" style="max-width:620px;margin:0 auto;background:#fffdf6;border-top:4px solid #c9f14a"><tr><td style="padding:30px 34px"><p style="margin:0 0 24px;color:#294f42;font-size:11px;font-weight:700;letter-spacing:1.8px">REBORN TECH / SECURE ITAD</p><h1 style="margin:0 0 18px;font-size:31px;line-height:1.05;letter-spacing:-1.5px">${title}</h1>${body}<hr style="margin:32px 0 18px;border:0;border-top:1px solid #d5d5cb"><p style="margin:0;color:#5b625b;font-size:12px;line-height:1.6">Reborn Tech is a Bulk GSM company. Secure ITAD. Second life, verified.</p></td></tr></table></td></tr></table></body></html>`;
+
+export async function sendPortalInvitationEmail(input: { to: string; organisationName: string; portalUrl: string; expiresAt: Date; resend?: boolean }) {
+  const organisation = escapeHtml(input.organisationName);
+  const url = escapeHtml(input.portalUrl);
+  const expires = input.expiresAt.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+  const heading = input.resend ? "Your collection portal link has been refreshed." : "Your collection portal is ready.";
+  const html = shell(heading, `<p style="font-size:16px;line-height:1.6">Reborn has prepared a secure collection portal for <strong>${organisation}</strong>. Use the button below to view routes, documents and customer-safe milestones—no account setup is required.</p><p style="margin:28px 0"><a href="${url}" style="display:inline-block;background:#c9f14a;color:#182019;padding:14px 18px;text-decoration:none;font-weight:700">Open your collection portal →</a></p><p style="font-size:13px;line-height:1.6;color:#586058">This private access link is available until ${escapeHtml(expires)}. Please keep it confidential and contact Reborn if it was sent to you in error.</p>`);
+  return sendEmail({ to: input.to, subject: input.resend ? "Your refreshed Reborn Tech collection portal link" : "Your Reborn Tech collection portal is ready", html, text: `Reborn has prepared a secure collection portal for ${input.organisationName}. Open it here: ${input.portalUrl}. This link is available until ${expires}.` });
+}
+
+export async function sendCollectionStatusEmail(input: { to: string; organisationName: string; collectionReference: string; collectionTitle: string; statusLabel: string; portalUrl: string }) {
+  const html = shell("Your collection route has moved forward.", `<p style="font-size:16px;line-height:1.6"><strong>${escapeHtml(input.collectionReference)}</strong> — ${escapeHtml(input.collectionTitle)} is now marked <strong>${escapeHtml(input.statusLabel)}</strong>.</p><p style="margin:28px 0"><a href="${escapeHtml(input.portalUrl)}" style="display:inline-block;background:#c9f14a;color:#182019;padding:14px 18px;text-decoration:none;font-weight:700">View collection update →</a></p><p style="font-size:13px;line-height:1.6;color:#586058">The portal contains the latest customer-visible milestones and released route documents.</p>`);
+  return sendEmail({ to: input.to, subject: `Collection update: ${input.collectionReference} is now ${input.statusLabel}`, html, text: `${input.collectionReference} — ${input.collectionTitle} is now ${input.statusLabel}. View the latest information: ${input.portalUrl}` });
+}

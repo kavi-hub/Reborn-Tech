@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   updateCollectionStatus: vi.fn(),
   assignCustomerOrganisationMember: vi.fn(),
   createCustomerPortalInvitation: vi.fn(),
+  getPortalInvitation: vi.fn(),
+  listActivePortalInvitations: vi.fn(),
+  listOrganisationPortalInvitations: vi.fn(),
+  recordPortalInvitationEmail: vi.fn(),
+  recordPortalInvitationEmailFailure: vi.fn(),
+  revokePortalInvitation: vi.fn(),
   claimCustomerPortalInvitation: vi.fn(),
   getMagicPortalOverview: vi.fn(),
   getMagicPortalAttachment: vi.fn(),
@@ -30,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   listCollectionIdsForOrganisation: vi.fn(),
   listCustomerCollectionAuditEvents: vi.fn(),
   notifyOwner: vi.fn(),
+  sendPortalInvitationEmail: vi.fn(),
+  sendCollectionStatusEmail: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
@@ -44,6 +52,12 @@ vi.mock("./db", () => ({
   updateCollectionStatus: mocks.updateCollectionStatus,
   assignCustomerOrganisationMember: mocks.assignCustomerOrganisationMember,
   createCustomerPortalInvitation: mocks.createCustomerPortalInvitation,
+  getPortalInvitation: mocks.getPortalInvitation,
+  listActivePortalInvitations: mocks.listActivePortalInvitations,
+  listOrganisationPortalInvitations: mocks.listOrganisationPortalInvitations,
+  recordPortalInvitationEmail: mocks.recordPortalInvitationEmail,
+  recordPortalInvitationEmailFailure: mocks.recordPortalInvitationEmailFailure,
+  revokePortalInvitation: mocks.revokePortalInvitation,
   claimCustomerPortalInvitation: mocks.claimCustomerPortalInvitation,
   getMagicPortalOverview: mocks.getMagicPortalOverview,
   getMagicPortalAttachment: mocks.getMagicPortalAttachment,
@@ -63,6 +77,11 @@ vi.mock("./db", () => ({
 
 vi.mock("./_core/notification", () => ({
   notifyOwner: mocks.notifyOwner,
+}));
+
+vi.mock("./rebornEmail", () => ({
+  sendPortalInvitationEmail: mocks.sendPortalInvitationEmail,
+  sendCollectionStatusEmail: mocks.sendCollectionStatusEmail,
 }));
 
 vi.mock("./storage", () => ({
@@ -86,6 +105,9 @@ describe("assessment input validation", () => {
     vi.clearAllMocks();
     mocks.createCollectionAuditEvent.mockResolvedValue(undefined);
     mocks.listCollectionIdsForOrganisation.mockResolvedValue([]);
+    mocks.listActivePortalInvitations.mockResolvedValue([]);
+    mocks.listOrganisationPortalInvitations.mockResolvedValue([]);
+    mocks.sendPortalInvitationEmail.mockResolvedValue("email_123");
   });
   it("accepts a valid public assessment request and defaults operational flags", () => {
     const parsed = assessmentInputSchema.parse(validRequest);
@@ -167,6 +189,41 @@ describe("assessment input validation", () => {
     expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 44, eventType: "route_created", actorUserId: 1 }));
   });
 
+  it("keeps the Bulk GSM Dash collection list and new Core Jobs inside the bulk_gsm partition", async () => {
+    mocks.listAdminCollections.mockResolvedValue([]);
+    mocks.createCollectionTrack.mockResolvedValue({ id: 54, reference: "BG-2026-001", brand: "bulk_gsm" });
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.collections.listAdmin({ brand: "bulk_gsm" })).resolves.toEqual([]);
+    await expect(admin.collections.create({ brand: "bulk_gsm", organisationName: "Northwind Services", reference: "BG-2026-001", title: "Bulk GSM device collection" })).resolves.toEqual({ success: true });
+
+    expect(mocks.listAdminCollections).toHaveBeenCalledWith("bulk_gsm");
+    expect(mocks.createCollectionTrack).toHaveBeenCalledWith(expect.objectContaining({ brand: "bulk_gsm", reference: "BG-2026-001" }));
+  });
+
+  it("scopes invitation creation and its route audit activity to the chosen Core brand", async () => {
+    mocks.listCollectionIdsForOrganisation.mockResolvedValue([{ id: 73 }]);
+    mocks.listAdminCollections.mockResolvedValue([{ organisation: { id: 8, name: "Northwind Services" } }]);
+    mocks.createCustomerPortalInvitation.mockImplementation(async (input) => ({ id: 19, ...input }));
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await admin.collections.createInvitation({ organisationId: 8, brand: "bulk_gsm", email: "bulk.client@example.com", role: "viewer" });
+
+    expect(mocks.createCustomerPortalInvitation).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 8, brand: "bulk_gsm" }));
+    expect(mocks.listCollectionIdsForOrganisation).toHaveBeenCalledWith(8, "bulk_gsm");
+    expect(mocks.listAdminCollections).toHaveBeenCalledWith("bulk_gsm");
+    expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 73, eventType: "invitation_sent" }));
+  });
+
+  it("rejects invitation resend when its record belongs to a different brand workspace", async () => {
+    mocks.getPortalInvitation.mockResolvedValue({ id: 19, organisationId: 8, brand: "bulk_gsm", status: "pending" });
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.collections.resendInvitation({ invitationId: 19, brand: "reborn" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mocks.sendPortalInvitationEmail).not.toHaveBeenCalled();
+    expect(mocks.listCollectionIdsForOrganisation).not.toHaveBeenCalled();
+  });
+
   it("passes the signed-in customer admin to the scoped viewer-grant boundary", async () => {
     mocks.getCustomerOrganisationMembership.mockResolvedValue({ role: "admin" });
     mocks.assignCustomerViewerByOrganisationAdmin.mockResolvedValue(undefined);
@@ -226,6 +283,8 @@ describe("assessment input validation", () => {
 
   it("lets an admin pre-provision a time-limited customer invitation", async () => {
     mocks.listCollectionIdsForOrganisation.mockResolvedValue([{ id: 31 }]);
+    mocks.listAdminCollections.mockResolvedValue([{ organisation: { id: 4, name: "Northwind Services" } }]);
+    mocks.createCustomerPortalInvitation.mockImplementation(async (input) => ({ id: 14, ...input }));
     const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
 
     const result = await admin.collections.createInvitation({ organisationId: 4, email: "client@example.com", role: "viewer" });
@@ -233,7 +292,8 @@ describe("assessment input validation", () => {
     expect(result.token).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(result.expiresAt).toBeInstanceOf(Date);
     expect(mocks.createCustomerPortalInvitation).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 4, email: "client@example.com", role: "viewer", createdByUserId: 7 }));
-    expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 31, eventType: "customer_access_changed", actorUserId: 7 }));
+    expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 31, eventType: "invitation_sent", actorUserId: 7 }));
+    expect(mocks.sendPortalInvitationEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "client@example.com", organisationName: "Northwind Services" }));
   });
 
   it("claims an invited customer portal link for the authenticated work email", async () => {
@@ -250,6 +310,21 @@ describe("assessment input validation", () => {
 
     await expect(publicCaller.magicPortal.overview({ token: "p".repeat(24) })).resolves.toMatchObject({ organisation: { id: 4 } });
     expect(mocks.getMagicPortalOverview).toHaveBeenCalledWith("p".repeat(24));
+  });
+
+  it("uses the direct-link token as the only portal scope, preventing a caller from selecting another brand", async () => {
+    const rebornToken = "r".repeat(24);
+    const bulkToken = "b".repeat(24);
+    mocks.getMagicPortalOverview.mockImplementation(async (token) => token === rebornToken
+      ? { organisation: { id: 4, name: "Reborn customer" }, collections: [{ brand: "reborn" }], attachments: [], events: [] }
+      : { organisation: { id: 8, name: "Bulk GSM customer" }, collections: [{ brand: "bulk_gsm" }], attachments: [], events: [] });
+    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
+
+    await expect(publicCaller.magicPortal.overview({ token: rebornToken })).resolves.toMatchObject({ collections: [{ brand: "reborn" }] });
+    await expect(publicCaller.magicPortal.overview({ token: bulkToken })).resolves.toMatchObject({ collections: [{ brand: "bulk_gsm" }] });
+
+    expect(mocks.getMagicPortalOverview).toHaveBeenNthCalledWith(1, rebornToken);
+    expect(mocks.getMagicPortalOverview).toHaveBeenNthCalledWith(2, bulkToken);
   });
 
   it("rejects invalid and expired direct invitation tokens", async () => {

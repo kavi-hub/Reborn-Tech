@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { ClipboardList, LayoutDashboard, LogOut, PanelLeft, Truck } from "lucide-react";
+import { Boxes, ClipboardList, LayoutDashboard, LogOut, PanelLeft, Truck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -31,6 +31,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Operations overview", path: "/operations" },
   { icon: ClipboardList, label: "Assessment enquiries", path: "/operations" },
   { icon: Truck, label: "Collection tracking", path: "/operations/collections" },
+  { icon: Boxes, label: "Bulk GSM ITAD Dash", path: "/bulk/itad-dash" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -169,7 +170,7 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold tracking-tight truncate">Reborn operations</span>
+                    <span className="font-semibold tracking-tight truncate">ITAD Core operations</span>
                 </div>
               ) : null}
             </div>

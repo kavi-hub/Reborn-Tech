@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Clock3, FileMinus2, FilePlus2, Flag, History
 
 type AuditEvent = {
   id: number;
-  eventType: "route_created" | "status_changed" | "customer_access_changed" | "attachment_uploaded" | "attachment_removed";
+  eventType: "route_created" | "status_changed" | "customer_access_changed" | "invitation_sent" | "invitation_revoked" | "attachment_uploaded" | "attachment_removed";
   summary: string;
   createdAt: Date;
 };

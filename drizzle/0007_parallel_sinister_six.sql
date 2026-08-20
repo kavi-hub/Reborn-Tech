@@ -1,0 +1,2 @@
+ALTER TABLE `collectionTracks` ADD `brand` enum('reborn','bulk_gsm') DEFAULT 'reborn' NOT NULL;--> statement-breakpoint
+ALTER TABLE `customerPortalInvitations` ADD `brand` enum('reborn','bulk_gsm') DEFAULT 'reborn' NOT NULL;

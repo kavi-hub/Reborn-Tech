@@ -8,6 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import CustomerPortal from "./pages/CustomerPortal";
 import CollectionsManager from "./pages/CollectionsManager";
+import BulkItadDash from "./pages/BulkItadDash";
 import OperationsDashboard from "./pages/OperationsDashboard";
 import { ImpactPage, PrivacyPage, SecurityPage, ServicesPage } from "./pages/TrustPages";
 
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/operations" component={OperationsDashboard} />
       <Route path="/operations/collections" component={CollectionsManager} />
+      <Route path="/bulk/itad-dash" component={BulkItadDash} />
       <Route path="/portal" component={CustomerPortal} />
       <Route path="/services" component={ServicesPage} />
       <Route path="/security" component={SecurityPage} />

@@ -43,6 +43,27 @@
       "when": 1787216415547,
       "tag": "0005_ambitious_thanos",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787221637318,
+      "tag": "0006_tiresome_bushwacker",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787222202077,
+      "tag": "0007_parallel_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1787222378866,
+      "tag": "0008_fair_tomorrow_man",
+      "breakpoints": true
     }
   ]
 }

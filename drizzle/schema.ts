@@ -77,6 +77,7 @@ export const customerOrganisationMembers = mysqlTable("customerOrganisationMembe
 export const customerPortalInvitations = mysqlTable("customerPortalInvitations", {
   id: int("id").autoincrement().primaryKey(),
   organisationId: int("organisationId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).default("reborn").notNull(),
   email: varchar("email", { length: 320 }).notNull(),
   role: mysqlEnum("role", ["admin", "viewer"]).default("viewer").notNull(),
   token: varchar("token", { length: 128 }).notNull().unique(),
@@ -85,6 +86,10 @@ export const customerPortalInvitations = mysqlTable("customerPortalInvitations",
   createdByUserId: int("createdByUserId").notNull(),
   claimedByUserId: int("claimedByUserId"),
   claimedAt: timestamp("claimedAt"),
+  lastSentAt: timestamp("lastSentAt"),
+  lastEmailState: mysqlEnum("lastEmailState", ["not_sent", "sent", "failed"]).default("not_sent").notNull(),
+  lastEmailId: varchar("lastEmailId", { length: 128 }),
+  resendCount: int("resendCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -92,12 +97,28 @@ export const customerPortalInvitations = mysqlTable("customerPortalInvitations",
 export const collectionTracks = mysqlTable("collectionTracks", {
   id: int("id").autoincrement().primaryKey(),
   organisationId: int("organisationId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).default("reborn").notNull(),
+  jobId: int("jobId"),
   reference: varchar("reference", { length: 64 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   status: mysqlEnum("status", ["planned", "confirmed", "collected", "processing", "outcome_reported"]).default("planned").notNull(),
   scheduledFor: timestamp("scheduledFor"),
   collectionPostcode: varchar("collectionPostcode", { length: 24 }),
   customerNote: text("customerNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Canonical cross-brand ITAD job. Collection routes, assets, evidence and reporting attach to this durable identity. */
+export const itadJobs = mysqlTable("itadJobs", {
+  id: int("id").autoincrement().primaryKey(),
+  organisationId: int("organisationId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  jobReference: varchar("jobReference", { length: 64 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  stage: mysqlEnum("stage", ["intake", "planned_collection", "received", "processing", "exceptions", "evidence_review", "client_published", "completed"]).default("intake").notNull(),
+  estimatedAssetCount: int("estimatedAssetCount"),
+  receivedAssetCount: int("receivedAssetCount"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -120,7 +141,7 @@ export const collectionAttachments = mysqlTable("collectionAttachments", {
 export const collectionAuditEvents = mysqlTable("collectionAuditEvents", {
   id: int("id").autoincrement().primaryKey(),
   collectionId: int("collectionId").notNull(),
-  eventType: mysqlEnum("eventType", ["route_created", "status_changed", "customer_access_changed", "attachment_uploaded", "attachment_removed"]).notNull(),
+  eventType: mysqlEnum("eventType", ["route_created", "status_changed", "customer_access_changed", "invitation_sent", "invitation_revoked", "attachment_uploaded", "attachment_removed"]).notNull(),
   summary: varchar("summary", { length: 600 }).notNull(),
   customerVisible: boolean("customerVisible").default(false).notNull(),
   actorUserId: int("actorUserId").notNull(),
@@ -131,5 +152,6 @@ export type CustomerOrganisation = typeof customerOrganisations.$inferSelect;
 export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inferSelect;
 export type CustomerPortalInvitation = typeof customerPortalInvitations.$inferSelect;
 export type CollectionTrack = typeof collectionTracks.$inferSelect;
+export type ItadJob = typeof itadJobs.$inferSelect;
 export type CollectionAttachment = typeof collectionAttachments.$inferSelect;
 export type CollectionAuditEvent = typeof collectionAuditEvents.$inferSelect;
