@@ -208,3 +208,9 @@
 - [x] Add tests for activity/history scope, account filters and brand-contact visibility.
 - [x] Record client account activation in the immutable account activity ledger and surface it in staff history.
 - [x] Add regression coverage proving activation events remain scoped to the correct brand history.
+
+## Shared ITAD Core verification
+
+- [x] Run the automated brand-isolation and protected-route suite for Reborn and Bulk GSM views.
+- [x] Verify the rendered Reborn Operations and Bulk GSM ITAD Dash routes remain distinct workspaces.
+- [x] Confirm the latest shared-repository commit, clean working tree and published deployment state.
