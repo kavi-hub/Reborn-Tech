@@ -1,11 +1,12 @@
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { assignCustomerOrganisationMember, assignCustomerViewerByOrganisationAdmin, createAssessmentRequest, createCollectionTrack, deleteAssessmentRequest, exportAssessmentRequests, getCustomerOrganisationMembership, listAdminCollections, listAssessmentRequests, listCustomerPortalCollections, updateAssessmentStatus, updateCollectionStatus } from "./db";
+import { assignCustomerOrganisationMember, assignCustomerViewerByOrganisationAdmin, createAssessmentRequest, createCollectionAttachment, createCollectionTrack, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, listAdminCollectionAttachments, listAdminCollections, listAssessmentRequests, listCustomerCollectionAttachments, listCustomerPortalCollections, updateAssessmentStatus, updateCollectionStatus } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { notifyOwner } from "./_core/notification";
+import { storageGetSignedUrl, storagePut } from "./storage";
 
 export const assessmentInputSchema = z.object({
   fullName: z.string().trim().min(2, "Enter your name").max(160),
@@ -25,6 +26,18 @@ export const assessmentInputSchema = z.object({
 });
 
 const collectionStatusSchema = z.enum(["planned", "confirmed", "collected", "processing", "outcome_reported"]);
+const attachmentTypeSchema = z.enum(["inventory", "evidence"]);
+const supportedAttachmentTypes = new Set([
+  "application/pdf", "text/csv", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/jpeg", "image/png",
+]);
+const attachmentUploadSchema = z.object({
+  collectionId: z.number().int().positive(),
+  attachmentType: attachmentTypeSchema,
+  fileName: z.string().trim().min(1).max(180),
+  contentType: z.string().trim().max(160),
+  contentBase64: z.string().min(1).max(14_000_000),
+  customerVisible: z.boolean().default(true),
+});
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -125,9 +138,32 @@ export const appRouter = router({
       await assignCustomerOrganisationMember(input);
       return { success: true } as const;
     }),
+    listAttachments: adminProcedure.input(z.object({ collectionId: z.number().int().positive() })).query(({ input }) => listAdminCollectionAttachments(input.collectionId)),
+    uploadAttachment: adminProcedure.input(attachmentUploadSchema).mutation(async ({ ctx, input }) => {
+      if (!supportedAttachmentTypes.has(input.contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: "Use PDF, CSV, Excel, Word, PNG or JPEG files only" });
+      const data = Buffer.from(input.contentBase64, "base64");
+      if (!data.length || data.length > 10_000_000) throw new TRPCError({ code: "BAD_REQUEST", message: "Files must be between 1 byte and 10 MB" });
+      const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const stored = await storagePut(`collection-routes/${input.collectionId}/${Date.now()}-${safeName}`, data, input.contentType);
+      await createCollectionAttachment({ collectionId: input.collectionId, attachmentType: input.attachmentType, fileName: input.fileName, contentType: input.contentType, sizeBytes: data.length, storageKey: stored.key, customerVisible: input.customerVisible, uploadedByUserId: ctx.user.id });
+      return { success: true } as const;
+    }),
+    downloadAttachment: adminProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
+      const attachment = await getAdminCollectionAttachment(input.attachmentId);
+      return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
+    }),
+    deleteAttachment: adminProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
+      await deleteCollectionAttachment(input.attachmentId);
+      return { success: true } as const;
+    }),
   }),
   customerPortal: router({
     collections: protectedProcedure.query(({ ctx }) => listCustomerPortalCollections(ctx.user.id)),
+    attachments: protectedProcedure.query(({ ctx }) => listCustomerCollectionAttachments(ctx.user.id)),
+    downloadAttachment: protectedProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const attachment = await getCustomerCollectionAttachment(ctx.user.id, input.attachmentId);
+      return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
+    }),
     assignViewer: protectedProcedure.input(z.object({ organisationId: z.number().int().positive(), email: z.string().trim().email().max(320) })).mutation(async ({ ctx, input }) => {
       const membership = await getCustomerOrganisationMembership(ctx.user.id, input.organisationId);
       if (membership?.role !== "admin") {

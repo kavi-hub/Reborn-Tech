@@ -1,0 +1,36 @@
+/* Material Trace attachments: operational documents are compact, evidence-led and secondary to route milestones. */
+.collection-attachments { margin-top: 27px; padding-top: 25px; border-top: 1px solid var(--line); }
+.collection-attachments-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.collection-attachments-head h3 { margin: 7px 0 6px; font-size: 22px; letter-spacing: -.055em; }
+.collection-attachments-head p:not(.ops-kicker) { max-width: 610px; margin: 0; color: #5b645a; font-size: 12px; line-height: 1.5; }
+.collection-attachments-head > svg { color: var(--mineral); }
+.attachment-upload-row { display: grid; grid-template-columns: 1.45fr .75fr auto auto; gap: 12px; align-items: end; margin-top: 19px; padding: 16px; background: #e5edcf; }
+.attachment-upload-row > label { display: flex; flex-direction: column; gap: 6px; color: #385041; font-size: 10px; font-weight: 700; }
+.attachment-upload-row > label input[type=file], .attachment-upload-row select { width: 100%; border: 1px solid rgba(32,75,62,.34); background: #fffefa; padding: 9px; color: var(--ink); font: 500 12px "Space Grotesk", sans-serif; }
+.attachment-upload-row > label > span { overflow: hidden; color: #4f5d4e; font-size: 10px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-visible { flex-direction: row !important; align-items: center; padding-bottom: 10px; white-space: nowrap; }
+.attachment-visible input { accent-color: var(--mineral); }
+.attachment-list { margin-top: 17px; border-top: 1px solid var(--line); }
+.attachment-list article { display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.attachment-list article > svg { color: var(--mineral); }
+.attachment-list article div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.attachment-list span { color: var(--mineral); font: 600 9px "IBM Plex Mono", monospace; letter-spacing: .06em; }
+.attachment-list strong { overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-list small { color: #636c61; font-size: 11px; }
+.attachment-list button { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #b7beb2; background: transparent; color: var(--mineral); cursor: pointer; }
+.attachment-list button:hover { border-color: var(--mineral); background: #e5edcf; }
+.attachment-list .attachment-delete { color: #9d463b; }
+.attachment-empty, .attachment-loading { margin: 15px 0 0; color: #647064; font-size: 12px; }
+.attachment-loading { display: flex; align-items: center; gap: 8px; }
+.portal-route-files { margin-top: 21px; padding: 16px; border: 1px solid rgba(32,75,62,.19); background: #f0f2e8; }
+.portal-route-files > div { display: flex; align-items: center; gap: 7px; color: var(--mineral); font: 600 9px "IBM Plex Mono", monospace; letter-spacing: .1em; }
+.portal-route-files > p { margin: 11px 0 0; color: #657064; font-size: 12px; }
+.portal-route-files ul { display: grid; gap: 9px; margin: 12px 0 0; padding: 0; list-style: none; }
+.portal-route-files li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding-top: 10px; border-top: 1px solid rgba(32,75,62,.16); }
+.portal-route-files li > svg { color: var(--mineral); }
+.portal-route-files li div { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.portal-route-files li strong { overflow: hidden; color: var(--ink); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.portal-route-files li small { color: #647064; font-size: 11px; }
+.portal-route-files li button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--mineral); font-size: 11px; font-weight: 700; cursor: pointer; }
+@media (max-width: 900px) { .attachment-upload-row { grid-template-columns: 1fr 1fr; }.attachment-upload-row > label:first-child { grid-column: 1 / -1; }.attachment-upload-row .button { grid-column: 1 / -1; } .portal-admin-access { grid-template-columns: 1fr; }.portal-access-form { flex-wrap: wrap; } }
+@media (max-width: 620px) { .attachment-upload-row { grid-template-columns: 1fr; }.attachment-visible { padding-bottom: 0; }.attachment-list article { grid-template-columns: auto 1fr auto auto; }.collection-attachments-head { align-items: center; } }

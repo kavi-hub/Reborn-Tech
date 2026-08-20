@@ -13,6 +13,14 @@ const mocks = vi.hoisted(() => ({
   assignCustomerOrganisationMember: vi.fn(),
   assignCustomerViewerByOrganisationAdmin: vi.fn(),
   getCustomerOrganisationMembership: vi.fn(),
+  createCollectionAttachment: vi.fn(),
+  listAdminCollectionAttachments: vi.fn(),
+  getAdminCollectionAttachment: vi.fn(),
+  deleteCollectionAttachment: vi.fn(),
+  listCustomerCollectionAttachments: vi.fn(),
+  getCustomerCollectionAttachment: vi.fn(),
+  storagePut: vi.fn(),
+  storageGetSignedUrl: vi.fn(),
   notifyOwner: vi.fn(),
 }));
 
@@ -29,10 +37,21 @@ vi.mock("./db", () => ({
   assignCustomerOrganisationMember: mocks.assignCustomerOrganisationMember,
   assignCustomerViewerByOrganisationAdmin: mocks.assignCustomerViewerByOrganisationAdmin,
   getCustomerOrganisationMembership: mocks.getCustomerOrganisationMembership,
+  createCollectionAttachment: mocks.createCollectionAttachment,
+  listAdminCollectionAttachments: mocks.listAdminCollectionAttachments,
+  getAdminCollectionAttachment: mocks.getAdminCollectionAttachment,
+  deleteCollectionAttachment: mocks.deleteCollectionAttachment,
+  listCustomerCollectionAttachments: mocks.listCustomerCollectionAttachments,
+  getCustomerCollectionAttachment: mocks.getCustomerCollectionAttachment,
 }));
 
 vi.mock("./_core/notification", () => ({
   notifyOwner: mocks.notifyOwner,
+}));
+
+vi.mock("./storage", () => ({
+  storagePut: mocks.storagePut,
+  storageGetSignedUrl: mocks.storageGetSignedUrl,
 }));
 
 import { assessmentInputSchema, appRouter } from "./routers";
@@ -153,5 +172,27 @@ describe("assessment input validation", () => {
     const caller = appRouter.createCaller(ctx);
 
     await expect(caller.customerPortal.assignViewer({ organisationId: 14, email: "viewer@example.com" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("stores an allowed attachment only through an admin route", async () => {
+    mocks.storagePut.mockResolvedValue({ key: "collection-routes/4/inventory.pdf", url: "/manus-storage/collection-routes/4/inventory.pdf" });
+    mocks.createCollectionAttachment.mockResolvedValue(undefined);
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.collections.uploadAttachment({ collectionId: 4, attachmentType: "inventory", fileName: "inventory.pdf", contentType: "application/pdf", contentBase64: "c2FtcGxl", customerVisible: true })).resolves.toEqual({ success: true });
+    expect(mocks.storagePut).toHaveBeenCalledWith(expect.stringContaining("collection-routes/4"), expect.any(Buffer), "application/pdf");
+    expect(mocks.createCollectionAttachment).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 4, attachmentType: "inventory", customerVisible: true, uploadedByUserId: 1 }));
+  });
+
+  it("rejects route attachment uploads from non-admin users", async () => {
+    const customer = appRouter.createCaller({ user: { id: 82, role: "user" }, req: {}, res: {} } as TrpcContext);
+    await expect(customer.collections.uploadAttachment({ collectionId: 4, attachmentType: "evidence", fileName: "evidence.pdf", contentType: "application/pdf", contentBase64: "c2FtcGxl", customerVisible: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("fetches customer attachment metadata only for the signed-in organisation member", async () => {
+    mocks.listCustomerCollectionAttachments.mockResolvedValue([]);
+    const customer = appRouter.createCaller({ user: { id: 82, role: "user" }, req: {}, res: {} } as TrpcContext);
+    await expect(customer.customerPortal.attachments()).resolves.toEqual([]);
+    expect(mocks.listCustomerCollectionAttachments).toHaveBeenCalledWith(82);
   });
 });

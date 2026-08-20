@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionTracks, customerOrganisationMembers, customerOrganisations, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
+import { assessmentRequests, collectionAttachments, collectionTracks, customerOrganisationMembers, customerOrganisations, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -201,6 +201,32 @@ export async function updateCollectionStatus(id: number, status: CollectionStatu
   await db.update(collectionTracks).set({ status }).where(eq(collectionTracks.id, id));
 }
 
+export async function createCollectionAttachment(input: { collectionId: number; attachmentType: "inventory" | "evidence"; fileName: string; contentType: string; sizeBytes: number; storageKey: string; customerVisible: boolean; uploadedByUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  await db.insert(collectionAttachments).values(input);
+}
+
+export async function listAdminCollectionAttachments(collectionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  return db.select().from(collectionAttachments).where(eq(collectionAttachments.collectionId, collectionId)).orderBy(desc(collectionAttachments.createdAt));
+}
+
+export async function getAdminCollectionAttachment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  const attachment = await db.select().from(collectionAttachments).where(eq(collectionAttachments.id, id)).limit(1);
+  if (!attachment[0]) throw new Error("Attachment not found");
+  return attachment[0];
+}
+
+export async function deleteCollectionAttachment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  await db.delete(collectionAttachments).where(eq(collectionAttachments.id, id));
+}
+
 export async function assignCustomerOrganisationMember(input: { organisationId: number; email: string; role: "admin" | "viewer" }) {
   const db = await getDb();
   if (!db) throw new Error("Customer portal storage is temporarily unavailable");
@@ -239,6 +265,24 @@ export async function getCustomerOrganisationMembership(userId: number, organisa
     .where(and(eq(customerOrganisationMembers.organisationId, organisationId), eq(customerOrganisationMembers.userId, userId)))
     .limit(1);
   return membership[0] ?? null;
+}
+
+export async function listCustomerCollectionAttachments(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  return db.select({ attachment: collectionAttachments, collection: collectionTracks, organisation: customerOrganisations }).from(customerOrganisationMembers)
+    .innerJoin(customerOrganisations, eq(customerOrganisationMembers.organisationId, customerOrganisations.id))
+    .innerJoin(collectionTracks, eq(collectionTracks.organisationId, customerOrganisations.id))
+    .innerJoin(collectionAttachments, eq(collectionAttachments.collectionId, collectionTracks.id))
+    .where(and(eq(customerOrganisationMembers.userId, userId), eq(collectionAttachments.customerVisible, true)))
+    .orderBy(desc(collectionAttachments.createdAt));
+}
+
+export async function getCustomerCollectionAttachment(userId: number, attachmentId: number) {
+  const attachments = await listCustomerCollectionAttachments(userId);
+  const match = attachments.find((entry) => entry.attachment.id === attachmentId);
+  if (!match) throw new Error("Attachment not found or not available to your organisation");
+  return match.attachment;
 }
 
 export async function listCustomerPortalCollections(userId: number) {

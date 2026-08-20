@@ -87,6 +87,21 @@ export const collectionTracks = mysqlTable("collectionTracks", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** Metadata for route-specific inventories and evidence. File bytes remain in secure object storage. */
+export const collectionAttachments = mysqlTable("collectionAttachments", {
+  id: int("id").autoincrement().primaryKey(),
+  collectionId: int("collectionId").notNull(),
+  attachmentType: mysqlEnum("attachmentType", ["inventory", "evidence"]).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  contentType: varchar("contentType", { length: 160 }).notNull(),
+  sizeBytes: int("sizeBytes").notNull(),
+  storageKey: varchar("storageKey", { length: 900 }).notNull(),
+  customerVisible: boolean("customerVisible").default(true).notNull(),
+  uploadedByUserId: int("uploadedByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type CustomerOrganisation = typeof customerOrganisations.$inferSelect;
 export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inferSelect;
 export type CollectionTrack = typeof collectionTracks.$inferSelect;
+export type CollectionAttachment = typeof collectionAttachments.$inferSelect;

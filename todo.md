@@ -79,3 +79,10 @@
 - [x] Enforce distinct customer-portal permissions for organisation admin and viewer roles, with server coverage.
 - [x] Give organisation admins a customer-facing viewer-access capability while keeping viewers read-only.
 - [x] Prove through server tests that a customer viewer or non-member cannot grant portal access, while an organisation admin can.
+
+## Collection-route attachments
+
+- [x] Store inventory and evidence-file metadata against the relevant collection route.
+- [x] Restrict attachment upload and management to Reborn operations admins.
+- [x] Give assigned customer organisations scoped, read-only visibility of their route attachments.
+- [x] Add upload, download and deletion controls with file-type and size validation.
