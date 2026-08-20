@@ -1,0 +1,1 @@
+ALTER TABLE `customerPortalAccountActivityEvents` MODIFY COLUMN `action` enum('activated','signed_in','reset_requested','password_reset','disabled','enabled') NOT NULL;

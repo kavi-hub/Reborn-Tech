@@ -120,6 +120,20 @@
       "when": 1787244606311,
       "tag": "0016_fluffy_madripoor",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1787252453468,
+      "tag": "0017_romantic_raider",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1787252869952,
+      "tag": "0018_salty_ser_duncan",
+      "breakpoints": true
     }
   ]
 }

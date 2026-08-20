@@ -67,6 +67,9 @@ const mocks = vi.hoisted(() => ({
   createClientPasswordResetToken: vi.fn(),
   resetClientPortalPassword: vi.fn(),
   listClientPortalAccounts: vi.fn(),
+  listClientPortalAccountActivity: vi.fn(),
+  getBrandSupportContact: vi.fn(),
+  upsertBrandSupportContact: vi.fn(),
   setClientPortalAccountStatus: vi.fn(),
   recordClientPortalSignIn: vi.fn(),
   listClientPortalCollections: vi.fn(),
@@ -141,6 +144,9 @@ vi.mock("./db", () => ({
   createClientPasswordResetToken: mocks.createClientPasswordResetToken,
   resetClientPortalPassword: mocks.resetClientPortalPassword,
   listClientPortalAccounts: mocks.listClientPortalAccounts,
+  listClientPortalAccountActivity: mocks.listClientPortalAccountActivity,
+  getBrandSupportContact: mocks.getBrandSupportContact,
+  upsertBrandSupportContact: mocks.upsertBrandSupportContact,
   setClientPortalAccountStatus: mocks.setClientPortalAccountStatus,
   recordClientPortalSignIn: mocks.recordClientPortalSignIn,
   listClientPortalCollections: mocks.listClientPortalCollections,
@@ -704,5 +710,28 @@ describe("assessment input validation", () => {
     const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: { headers: { host: "reborntech.manus.space" }, protocol: "https" }, res: {} } as TrpcContext);
     await expect(admin.clientAccounts.sendPasswordReset({ accountId: 44, brand: "reborn" })).resolves.toMatchObject({ delivery: { delivered: true } });
     expect(mocks.createClientPasswordResetToken).toHaveBeenCalledWith({ email: "client@example.com", actorUserId: 7 });
+  });
+
+  it("returns brand-scoped activation history and forwards the selected quick filter", async () => {
+    mocks.listClientPortalAccountActivity.mockResolvedValueOnce([{ event: { id: 1, action: "activated", summary: "Client account activated from secure invitation" }, account: { email: "client@example.com" }, organisation: { name: "Example client" }, actorName: null }]).mockResolvedValueOnce([]);
+    mocks.listClientPortalAccounts.mockResolvedValue([]);
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    await expect(admin.clientAccounts.activity({ brand: "reborn" })).resolves.toMatchObject([{ event: { action: "activated" } }]);
+    await expect(admin.clientAccounts.activity({ brand: "bulk_gsm" })).resolves.toEqual([]);
+    await expect(admin.clientAccounts.list({ brand: "reborn", filter: "reset_pending" })).resolves.toEqual([]);
+    expect(mocks.listClientPortalAccountActivity).toHaveBeenNthCalledWith(1, "reborn");
+    expect(mocks.listClientPortalAccountActivity).toHaveBeenNthCalledWith(2, "bulk_gsm");
+    expect(mocks.listClientPortalAccounts).toHaveBeenCalledWith("reborn", "reset_pending");
+  });
+
+  it("returns a support contact only to the matching client brand and lets admins update it", async () => {
+    mocks.getBrandSupportContact.mockResolvedValue({ brand: "bulk_gsm", contactName: "Bulk account manager", email: "bulk@example.com", phone: "+44 20 0000 0000" });
+    mocks.upsertBrandSupportContact.mockResolvedValue({ brand: "reborn", contactName: "Reborn account manager", email: "reborn@example.com", phone: null });
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "bulk_gsm", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    await expect(client.clientPortal.supportContact()).resolves.toMatchObject({ brand: "bulk_gsm" });
+    await expect(admin.clientAccounts.updateSupportContact({ brand: "reborn", contactName: "Reborn account manager", email: "reborn@example.com" })).resolves.toMatchObject({ brand: "reborn" });
+    expect(mocks.getBrandSupportContact).toHaveBeenCalledWith("bulk_gsm");
+    expect(mocks.upsertBrandSupportContact).toHaveBeenCalledWith({ brand: "reborn", contactName: "Reborn account manager", email: "reborn@example.com", phone: null, updatedByUserId: 7 });
   });
 });

@@ -198,3 +198,13 @@
 - [x] Add a remembered-session option with a longer, explicit client-session lifetime and client-side authentication loading feedback.
 - [x] Add reset, disablement, remembered-session and account-control tests.
 - [x] Attribute staff-issued client password-reset activity to the initiating Operations administrator.
+
+## ITAD Core milestone 9 — account history and brand support
+
+- [x] Add a staff-only, brand-scoped client account activity history view covering activation, sign-in, reset requests and account-status changes.
+- [x] Add quick filters for all accounts, disabled accounts and accounts with a live password-reset request.
+- [x] Add a configurable, brand-scoped support-contact model that stores account manager name, email and optional phone number.
+- [x] Show the matching brand support contact in the password-gated client dashboard without exposing staff data beyond the contact card.
+- [x] Add tests for activity/history scope, account filters and brand-contact visibility.
+- [x] Record client account activation in the immutable account activity ledger and surface it in staff history.
+- [x] Add regression coverage proving activation events remain scoped to the correct brand history.

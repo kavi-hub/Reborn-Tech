@@ -117,10 +117,21 @@ export const customerPortalAccounts = mysqlTable("customerPortalAccounts", {
 export const customerPortalAccountActivityEvents = mysqlTable("customerPortalAccountActivityEvents", {
   id: int("id").autoincrement().primaryKey(),
   accountId: int("accountId").notNull(),
-  action: mysqlEnum("action", ["reset_requested", "password_reset", "disabled", "enabled"]).notNull(),
+  action: mysqlEnum("action", ["activated", "signed_in", "reset_requested", "password_reset", "disabled", "enabled"]).notNull(),
   summary: varchar("summary", { length: 500 }).notNull(),
   actorUserId: int("actorUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/** A configurable operational contact surfaced only to authenticated clients of the matching brand. */
+export const brandSupportContacts = mysqlTable("brandSupportContacts", {
+  id: int("id").autoincrement().primaryKey(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull().unique(),
+  contactName: varchar("contactName", { length: 160 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 48 }),
+  updatedByUserId: int("updatedByUserId"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 /** Collection milestones visible to the Reborn team and scoped customer-organisation members. */

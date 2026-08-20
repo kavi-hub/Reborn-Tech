@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createHash, randomBytes } from "node:crypto";
-import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
+import { assessmentRequests, brandSupportContacts, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 import { calculateCoreJobExceptionKpis } from "../shared/coreJobKpis";
@@ -143,6 +143,7 @@ export async function activateClientPortalAccount(input: { token: string; passwo
   const account = await db.select().from(customerPortalAccounts).where(eq(customerPortalAccounts.email, email)).limit(1);
   await db.update(customerPortalInvitations).set({ status: "claimed", claimedAt: new Date() }).where(eq(customerPortalInvitations.id, invitation.id));
   if (!account[0]) throw new Error("Client portal account could not be activated");
+  await recordClientPortalAccountActivity({ accountId: account[0].id, action: "activated", summary: "Client account activated from secure invitation" });
   return account[0];
 }
 
@@ -171,6 +172,7 @@ export async function recordClientPortalSignIn(accountId: number) {
   const db = await getDb();
   if (!db) throw new Error("Customer portal storage is temporarily unavailable");
   await db.update(customerPortalAccounts).set({ lastSignedInAt: new Date() }).where(eq(customerPortalAccounts.id, accountId));
+  await recordClientPortalAccountActivity({ accountId, action: "signed_in", summary: "Client signed in to their dashboard" });
 }
 
 export async function getActiveClientPortalAccountForSession(input: { accountId: number; organisationId: number; brand: ItadBrand; email: string; sessionVersion: number }) {
@@ -179,18 +181,43 @@ export async function getActiveClientPortalAccountForSession(input: { accountId:
   return account;
 }
 
-async function recordClientPortalAccountActivity(input: { accountId: number; action: "reset_requested" | "password_reset" | "disabled" | "enabled"; summary: string; actorUserId?: number | null }) {
+async function recordClientPortalAccountActivity(input: { accountId: number; action: "activated" | "signed_in" | "reset_requested" | "password_reset" | "disabled" | "enabled"; summary: string; actorUserId?: number | null }) {
   const db = await getDb();
   if (!db) throw new Error("Customer portal storage is temporarily unavailable");
   await db.insert(customerPortalAccountActivityEvents).values({ accountId: input.accountId, action: input.action, summary: input.summary, actorUserId: input.actorUserId ?? null });
 }
 
-export async function listClientPortalAccounts(brand: ItadBrand) {
+export async function listClientPortalAccounts(brand: ItadBrand, filter: "all" | "disabled" | "reset_pending" = "all") {
   const db = await getDb();
   if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const statusFilter = filter === "disabled" ? eq(customerPortalAccounts.status, "disabled") : filter === "reset_pending" ? and(eq(customerPortalAccounts.status, "active"), isNotNull(customerPortalAccounts.resetTokenHash), gt(customerPortalAccounts.resetExpiresAt, new Date())) : undefined;
   return db.select({ account: customerPortalAccounts, organisation: customerOrganisations }).from(customerPortalAccounts)
     .innerJoin(customerOrganisations, eq(customerOrganisations.id, customerPortalAccounts.organisationId))
-    .where(eq(customerPortalAccounts.brand, brand)).orderBy(desc(customerPortalAccounts.updatedAt));
+    .where(statusFilter ? and(eq(customerPortalAccounts.brand, brand), statusFilter) : eq(customerPortalAccounts.brand, brand)).orderBy(desc(customerPortalAccounts.updatedAt));
+}
+
+export async function listClientPortalAccountActivity(brand: ItadBrand, limit = 80) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  return db.select({ event: customerPortalAccountActivityEvents, account: { id: customerPortalAccounts.id, email: customerPortalAccounts.email }, organisation: { id: customerOrganisations.id, name: customerOrganisations.name }, actorName: users.name }).from(customerPortalAccountActivityEvents)
+    .innerJoin(customerPortalAccounts, eq(customerPortalAccounts.id, customerPortalAccountActivityEvents.accountId))
+    .innerJoin(customerOrganisations, eq(customerOrganisations.id, customerPortalAccounts.organisationId))
+    .leftJoin(users, eq(users.id, customerPortalAccountActivityEvents.actorUserId))
+    .where(eq(customerPortalAccounts.brand, brand)).orderBy(desc(customerPortalAccountActivityEvents.createdAt)).limit(limit);
+}
+
+export async function getBrandSupportContact(brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const rows = await db.select().from(brandSupportContacts).where(eq(brandSupportContacts.brand, brand)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upsertBrandSupportContact(input: { brand: ItadBrand; contactName: string; email: string; phone?: string | null; updatedByUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  await db.insert(brandSupportContacts).values({ brand: input.brand, contactName: input.contactName, email: input.email.toLowerCase(), phone: input.phone || null, updatedByUserId: input.updatedByUserId }).onDuplicateKeyUpdate({ set: { contactName: input.contactName, email: input.email.toLowerCase(), phone: input.phone || null, updatedByUserId: input.updatedByUserId, updatedAt: new Date() } });
+  return getBrandSupportContact(input.brand);
 }
 
 export async function createClientPasswordResetToken(input: { email: string; actorUserId?: number | null }) {
