@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
+import { createHash, randomBytes } from "node:crypto";
+import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 import { calculateCoreJobExceptionKpis } from "../shared/coreJobKpis";
@@ -159,10 +160,73 @@ export async function getClientPortalAccountById(accountId: number) {
   return account[0] ?? null;
 }
 
+export async function getClientPortalAccountForBrand(accountId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const account = await db.select().from(customerPortalAccounts).where(and(eq(customerPortalAccounts.id, accountId), eq(customerPortalAccounts.brand, brand))).limit(1);
+  return account[0] ?? null;
+}
+
 export async function recordClientPortalSignIn(accountId: number) {
   const db = await getDb();
   if (!db) throw new Error("Customer portal storage is temporarily unavailable");
   await db.update(customerPortalAccounts).set({ lastSignedInAt: new Date() }).where(eq(customerPortalAccounts.id, accountId));
+}
+
+export async function getActiveClientPortalAccountForSession(input: { accountId: number; organisationId: number; brand: ItadBrand; email: string; sessionVersion: number }) {
+  const account = await getClientPortalAccountById(input.accountId);
+  if (!account || account.status !== "active" || account.organisationId !== input.organisationId || account.brand !== input.brand || account.email !== input.email || account.sessionVersion !== input.sessionVersion) return null;
+  return account;
+}
+
+async function recordClientPortalAccountActivity(input: { accountId: number; action: "reset_requested" | "password_reset" | "disabled" | "enabled"; summary: string; actorUserId?: number | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  await db.insert(customerPortalAccountActivityEvents).values({ accountId: input.accountId, action: input.action, summary: input.summary, actorUserId: input.actorUserId ?? null });
+}
+
+export async function listClientPortalAccounts(brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  return db.select({ account: customerPortalAccounts, organisation: customerOrganisations }).from(customerPortalAccounts)
+    .innerJoin(customerOrganisations, eq(customerOrganisations.id, customerPortalAccounts.organisationId))
+    .where(eq(customerPortalAccounts.brand, brand)).orderBy(desc(customerPortalAccounts.updatedAt));
+}
+
+export async function createClientPasswordResetToken(input: { email: string; actorUserId?: number | null }) {
+  const account = await getClientPortalAccountByEmail(input.email);
+  if (!account || account.status !== "active") return null;
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const token = randomBytes(32).toString("base64url");
+  const resetTokenHash = createHash("sha256").update(token).digest("hex");
+  const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  await db.update(customerPortalAccounts).set({ resetTokenHash, resetExpiresAt }).where(eq(customerPortalAccounts.id, account.id));
+  await recordClientPortalAccountActivity({ accountId: account.id, action: "reset_requested", summary: input.actorUserId ? "Client password reset issued by Operations" : "Client password reset requested", actorUserId: input.actorUserId });
+  return { account, token, resetExpiresAt };
+}
+
+export async function resetClientPortalPassword(input: { tokenHash: string; passwordHash: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const accounts = await db.select().from(customerPortalAccounts).where(and(eq(customerPortalAccounts.resetTokenHash, input.tokenHash), gt(customerPortalAccounts.resetExpiresAt, new Date()), eq(customerPortalAccounts.status, "active"))).limit(1);
+  const account = accounts[0];
+  if (!account) throw new Error("This password reset link is invalid or has expired");
+  await db.update(customerPortalAccounts).set({ passwordHash: input.passwordHash, resetTokenHash: null, resetExpiresAt: null, sessionVersion: account.sessionVersion + 1 }).where(eq(customerPortalAccounts.id, account.id));
+  await recordClientPortalAccountActivity({ accountId: account.id, action: "password_reset", summary: "Client password reset completed" });
+  return { ...account, sessionVersion: account.sessionVersion + 1 };
+}
+
+export async function setClientPortalAccountStatus(input: { accountId: number; brand: ItadBrand; status: "active" | "disabled"; actorUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const accounts = await db.select().from(customerPortalAccounts).where(and(eq(customerPortalAccounts.id, input.accountId), eq(customerPortalAccounts.brand, input.brand))).limit(1);
+  const account = accounts[0];
+  if (!account) throw new Error("Client account could not be found in this brand workspace");
+  const sessionVersion = account.sessionVersion + 1;
+  await db.update(customerPortalAccounts).set({ status: input.status, disabledAt: input.status === "disabled" ? new Date() : null, disabledByUserId: input.status === "disabled" ? input.actorUserId : null, sessionVersion }).where(eq(customerPortalAccounts.id, account.id));
+  await recordClientPortalAccountActivity({ accountId: account.id, action: input.status === "disabled" ? "disabled" : "enabled", summary: input.status === "disabled" ? "Client account disabled by Operations" : "Client account re-enabled by Operations", actorUserId: input.actorUserId });
+  return { ...account, status: input.status, sessionVersion };
 }
 
 export async function getUserByOpenId(openId: string) {

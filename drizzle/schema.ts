@@ -102,9 +102,25 @@ export const customerPortalAccounts = mysqlTable("customerPortalAccounts", {
   role: mysqlEnum("role", ["admin", "viewer"]).default("viewer").notNull(),
   passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
   activatedFromInvitationId: int("activatedFromInvitationId").notNull(),
+  status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+  disabledAt: timestamp("disabledAt"),
+  disabledByUserId: int("disabledByUserId"),
+  resetTokenHash: varchar("resetTokenHash", { length: 128 }),
+  resetExpiresAt: timestamp("resetExpiresAt"),
+  sessionVersion: int("sessionVersion").default(0).notNull(),
   lastSignedInAt: timestamp("lastSignedInAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Immutable accountability record for client access lifecycle actions. */
+export const customerPortalAccountActivityEvents = mysqlTable("customerPortalAccountActivityEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  accountId: int("accountId").notNull(),
+  action: mysqlEnum("action", ["reset_requested", "password_reset", "disabled", "enabled"]).notNull(),
+  summary: varchar("summary", { length: 500 }).notNull(),
+  actorUserId: int("actorUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 /** Collection milestones visible to the Reborn team and scoped customer-organisation members. */

@@ -12,10 +12,12 @@ describe("client portal password protection", () => {
 
   it("round-trips a signed client session and rejects a tampered token", async () => {
     let token = "";
-    const res = { cookie: (_name: string, value: string) => { token = value; } };
+    let maxAge = 0;
+    const res = { cookie: (_name: string, value: string, options: { maxAge?: number }) => { token = value; maxAge = options.maxAge ?? 0; } };
     const req = { protocol: "https", headers: {} };
-    await setClientPortalSession(res as never, req as never, { accountId: 7, organisationId: 13, brand: "reborn", role: "viewer", email: "client@example.com" });
-    await expect(readClientPortalSession({ headers: { cookie: `__Host-reborn_client_portal=${token}` } } as never)).resolves.toEqual({ accountId: 7, organisationId: 13, brand: "reborn", role: "viewer", email: "client@example.com" });
+    await setClientPortalSession(res as never, req as never, { accountId: 7, organisationId: 13, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 2 }, true);
+    expect(maxAge).toBe(60 * 60 * 24 * 30 * 1000);
+    await expect(readClientPortalSession({ headers: { cookie: `__Host-reborn_client_portal=${token}` } } as never)).resolves.toEqual({ accountId: 7, organisationId: 13, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 2 });
     await expect(readClientPortalSession({ headers: { cookie: `__Host-reborn_client_portal=${token}x` } } as never)).resolves.toBeNull();
   });
 });

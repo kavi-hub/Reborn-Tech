@@ -1,14 +1,14 @@
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
-import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getAdminCollectionAttachment, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus, updateItadJobException } from "./db";
+import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createClientPasswordResetToken, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getActiveClientPortalAccountForSession, getAdminCollectionAttachment, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAccountForBrand, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAccounts, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, resetClientPortalPassword, revokePortalInvitation, setClientPortalAccountStatus, updateAssessmentStatus, updateCollectionStatus, updateItadJobException } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, clientPortalProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { notifyOwner } from "./_core/notification";
 import { storageGetSignedUrl, storagePut } from "./storage";
-import { sendCollectionStatusEmail, sendExceptionLifecycleEmail, sendPortalInvitationEmail } from "./rebornEmail";
+import { sendClientPasswordResetEmail, sendCollectionStatusEmail, sendExceptionLifecycleEmail, sendPortalInvitationEmail } from "./rebornEmail";
 import { mapSecurazeCsv } from "./securazeCsv";
 import { createSecurazePreviewReceipt, securazeFileHash, verifySecurazePreviewReceipt } from "./securazePreview";
 import { clearClientPortalSession, hashClientPassword, setClientPortalSession, verifyClientPassword } from "./clientPortalAuth";
@@ -120,6 +120,18 @@ const maskClientEmail = (email: string) => {
   const [local, domain] = email.split("@");
   return `${local.slice(0, 2)}${"•".repeat(Math.max(2, local.length - 2))}@${domain}`;
 };
+const hashClientResetToken = (token: string) => createHash("sha256").update(token).digest("hex");
+async function deliverClientPasswordReset(input: { email: string; origin: string; actorUserId?: number | null }) {
+  const reset = await createClientPasswordResetToken({ email: input.email, actorUserId: input.actorUserId });
+  if (!reset) return { delivered: false } as const;
+  try {
+    await sendClientPasswordResetEmail({ to: reset.account.email, resetUrl: `${input.origin}/login?reset=${reset.token}`, expiresAt: reset.resetExpiresAt });
+    return { delivered: true } as const;
+  } catch (error) {
+    console.error("[Email] Client password reset delivery failed", error);
+    return { delivered: false } as const;
+  }
+}
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -139,25 +151,47 @@ export const appRouter = router({
       const invitation = await getClientAccountActivationInvitation(input.token);
       return { email: maskClientEmail(invitation.email), organisationId: invitation.organisationId, brand: invitation.brand, role: invitation.role };
     }),
-    activate: publicProcedure.input(z.object({ token: z.string().min(20).max(128), password: clientPasswordSchema })).mutation(async ({ ctx, input }) => {
+    activate: publicProcedure.input(z.object({ token: z.string().min(20).max(128), password: clientPasswordSchema, rememberMe: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
       const account = await activateClientPortalAccount({ token: input.token, passwordHash: await hashClientPassword(input.password) });
-      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email });
+      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email, sessionVersion: account.sessionVersion }, input.rememberMe);
       return { success: true, brand: account.brand } as const;
     }),
-    login: publicProcedure.input(z.object({ email: z.string().trim().email().max(320), password: z.string().min(1).max(128) })).mutation(async ({ ctx, input }) => {
+    login: publicProcedure.input(z.object({ email: z.string().trim().email().max(320), password: z.string().min(1).max(128), rememberMe: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
       const account = await getClientPortalAccountByEmail(input.email);
-      if (!account || !(await verifyClientPassword(input.password, account.passwordHash))) throw new TRPCError({ code: "UNAUTHORIZED", message: "Email or password is not recognised" });
+      if (!account || account.status !== "active" || !(await verifyClientPassword(input.password, account.passwordHash))) throw new TRPCError({ code: "UNAUTHORIZED", message: "Email or password is not recognised" });
       await recordClientPortalSignIn(account.id);
-      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email });
+      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email, sessionVersion: account.sessionVersion }, input.rememberMe);
+      return { success: true, brand: account.brand } as const;
+    }),
+    requestPasswordReset: publicProcedure.input(z.object({ email: z.string().trim().email().max(320) })).mutation(async ({ ctx, input }) => {
+      await deliverClientPasswordReset({ email: input.email, origin: publicOrigin(ctx.req) });
+      return { success: true } as const;
+    }),
+    resetPassword: publicProcedure.input(z.object({ token: z.string().min(20).max(128), password: clientPasswordSchema, rememberMe: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
+      const account = await resetClientPortalPassword({ tokenHash: hashClientResetToken(input.token), passwordHash: await hashClientPassword(input.password) });
+      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email, sessionVersion: account.sessionVersion }, input.rememberMe);
       return { success: true, brand: account.brand } as const;
     }),
     me: publicProcedure.query(async ({ ctx }) => {
       if (!ctx.clientSession) return null;
-      const account = await getClientPortalAccountById(ctx.clientSession.accountId);
-      if (!account || account.organisationId !== ctx.clientSession.organisationId || account.brand !== ctx.clientSession.brand || account.email !== ctx.clientSession.email) return null;
+      const account = await getActiveClientPortalAccountForSession(ctx.clientSession);
+      if (!account) return null;
       return { email: account.email, role: account.role, organisationId: account.organisationId, brand: account.brand };
     }),
     logout: publicProcedure.mutation(({ ctx }) => { clearClientPortalSession(ctx.res, ctx.req); return { success: true } as const; }),
+  }),
+  clientAccounts: router({
+    list: adminProcedure.input(z.object({ brand: itadBrandSchema })).query(({ input }) => listClientPortalAccounts(input.brand)),
+    setStatus: adminProcedure.input(z.object({ accountId: z.number().int().positive(), brand: itadBrandSchema, status: z.enum(["active", "disabled"]) })).mutation(async ({ ctx, input }) => {
+      const account = await setClientPortalAccountStatus({ ...input, actorUserId: ctx.user.id });
+      return { account };
+    }),
+    sendPasswordReset: adminProcedure.input(z.object({ accountId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ ctx, input }) => {
+      const account = await getClientPortalAccountForBrand(input.accountId, input.brand);
+      if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "Client account could not be found in this brand workspace" });
+      const delivery = await deliverClientPasswordReset({ email: account.email, origin: publicOrigin(ctx.req), actorUserId: ctx.user.id });
+      return { delivery };
+    }),
   }),
   clientPortal: router({
     collections: clientPortalProcedure.query(({ ctx }) => listClientPortalCollections(ctx.clientSession.organisationId, ctx.clientSession.brand)),

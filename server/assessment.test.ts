@@ -57,10 +57,17 @@ const mocks = vi.hoisted(() => ({
   sendPortalInvitationEmail: vi.fn(),
   sendCollectionStatusEmail: vi.fn(),
   sendExceptionLifecycleEmail: vi.fn(),
+  sendClientPasswordResetEmail: vi.fn(),
   getClientAccountActivationInvitation: vi.fn(),
   activateClientPortalAccount: vi.fn(),
   getClientPortalAccountByEmail: vi.fn(),
   getClientPortalAccountById: vi.fn(),
+  getClientPortalAccountForBrand: vi.fn(),
+  getActiveClientPortalAccountForSession: vi.fn(),
+  createClientPasswordResetToken: vi.fn(),
+  resetClientPortalPassword: vi.fn(),
+  listClientPortalAccounts: vi.fn(),
+  setClientPortalAccountStatus: vi.fn(),
   recordClientPortalSignIn: vi.fn(),
   listClientPortalCollections: vi.fn(),
   listClientPortalAttachments: vi.fn(),
@@ -129,6 +136,12 @@ vi.mock("./db", () => ({
   activateClientPortalAccount: mocks.activateClientPortalAccount,
   getClientPortalAccountByEmail: mocks.getClientPortalAccountByEmail,
   getClientPortalAccountById: mocks.getClientPortalAccountById,
+  getClientPortalAccountForBrand: mocks.getClientPortalAccountForBrand,
+  getActiveClientPortalAccountForSession: mocks.getActiveClientPortalAccountForSession,
+  createClientPasswordResetToken: mocks.createClientPasswordResetToken,
+  resetClientPortalPassword: mocks.resetClientPortalPassword,
+  listClientPortalAccounts: mocks.listClientPortalAccounts,
+  setClientPortalAccountStatus: mocks.setClientPortalAccountStatus,
   recordClientPortalSignIn: mocks.recordClientPortalSignIn,
   listClientPortalCollections: mocks.listClientPortalCollections,
   listClientPortalAttachments: mocks.listClientPortalAttachments,
@@ -146,6 +159,7 @@ vi.mock("./rebornEmail", () => ({
   sendPortalInvitationEmail: mocks.sendPortalInvitationEmail,
   sendCollectionStatusEmail: mocks.sendCollectionStatusEmail,
   sendExceptionLifecycleEmail: mocks.sendExceptionLifecycleEmail,
+  sendClientPasswordResetEmail: mocks.sendClientPasswordResetEmail,
 }));
 
 vi.mock("./storage", () => ({
@@ -181,6 +195,7 @@ describe("assessment input validation", () => {
     mocks.listActivePortalInvitations.mockResolvedValue([]);
     mocks.listOrganisationPortalInvitations.mockResolvedValue([]);
     mocks.sendPortalInvitationEmail.mockResolvedValue("email_123");
+    mocks.getActiveClientPortalAccountForSession.mockResolvedValue({ id: 44, status: "active", sessionVersion: 0 });
   });
   it("accepts a valid public assessment request and defaults operational flags", () => {
     const parsed = assessmentInputSchema.parse(validRequest);
@@ -615,13 +630,13 @@ describe("assessment input validation", () => {
   it("activates an invited client password account and scopes the resulting session to its organisation and brand", async () => {
     mocks.getClientAccountActivationInvitation.mockResolvedValue({ id: 91, email: "client@example.com", organisationId: 55, brand: "reborn", role: "viewer", expiresAt: new Date("2026-09-01") });
     mocks.hashClientPassword.mockResolvedValue("scrypt$hash");
-    mocks.activateClientPortalAccount.mockResolvedValue({ id: 44, email: "client@example.com", organisationId: 55, brand: "reborn", role: "viewer" });
+    mocks.activateClientPortalAccount.mockResolvedValue({ id: 44, email: "client@example.com", organisationId: 55, brand: "reborn", role: "viewer", sessionVersion: 0 });
     const caller = appRouter.createCaller({ user: null, clientSession: null, req: {}, res: {} } as TrpcContext);
 
     await expect(caller.clientAuth.invitation({ token: "a".repeat(24) })).resolves.toMatchObject({ email: "cl••••@example.com", brand: "reborn" });
     await expect(caller.clientAuth.activate({ token: "a".repeat(24), password: "Password12345" })).resolves.toEqual({ success: true, brand: "reborn" });
     expect(mocks.activateClientPortalAccount).toHaveBeenCalledWith({ token: "a".repeat(24), passwordHash: "scrypt$hash" });
-    expect(mocks.setClientPortalSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com" });
+    expect(mocks.setClientPortalSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 0 }, false);
   });
 
   it("rejects invalid client credentials and denies client dashboard reads without a client session", async () => {
@@ -637,7 +652,7 @@ describe("assessment input validation", () => {
     mocks.listClientPortalAttachments.mockResolvedValue([]);
     mocks.listClientPortalAuditEvents.mockResolvedValue({ events: [], total: 0 });
     mocks.listClientPortalCoreEvidence.mockResolvedValue([]);
-    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "bulk_gsm", role: "viewer", email: "client@example.com" }, req: {}, res: {} } as TrpcContext);
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "bulk_gsm", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
     await client.clientPortal.collections();
     await client.clientPortal.attachments();
     await client.clientPortal.auditEvents({ page: 2, pageSize: 6 });
@@ -646,5 +661,48 @@ describe("assessment input validation", () => {
     expect(mocks.listClientPortalAttachments).toHaveBeenCalledWith(55, "bulk_gsm");
     expect(mocks.listClientPortalAuditEvents).toHaveBeenCalledWith(55, "bulk_gsm", 2, 6);
     expect(mocks.listClientPortalCoreEvidence).toHaveBeenCalledWith(55, "bulk_gsm");
+  });
+
+  it("issues a generic client reset response while delivering only to an active account", async () => {
+    mocks.createClientPasswordResetToken.mockResolvedValue({ account: { id: 44, email: "client@example.com" }, token: "r".repeat(43), resetExpiresAt: new Date("2026-09-01T12:00:00Z") });
+    mocks.sendClientPasswordResetEmail.mockResolvedValue("email_reset");
+    const caller = appRouter.createCaller({ user: null, clientSession: null, req: { headers: { host: "reborntech.manus.space" }, protocol: "https" }, res: {} } as TrpcContext);
+
+    await expect(caller.clientAuth.requestPasswordReset({ email: "client@example.com" })).resolves.toEqual({ success: true });
+    expect(mocks.sendClientPasswordResetEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "client@example.com", resetUrl: expect.stringContaining("/login?reset=") }));
+    mocks.createClientPasswordResetToken.mockResolvedValue(null);
+    await expect(caller.clientAuth.requestPasswordReset({ email: "missing@example.com" })).resolves.toEqual({ success: true });
+  });
+
+  it("resets a client password into a new remembered session and rejects disabled dashboard access", async () => {
+    mocks.hashClientPassword.mockResolvedValue("scrypt$new-hash");
+    mocks.resetClientPortalPassword.mockResolvedValue({ id: 44, email: "client@example.com", organisationId: 55, brand: "reborn", role: "viewer", sessionVersion: 3 });
+    const caller = appRouter.createCaller({ user: null, clientSession: null, req: {}, res: {} } as TrpcContext);
+    await expect(caller.clientAuth.resetPassword({ token: "r".repeat(24), password: "Password12345", rememberMe: true })).resolves.toEqual({ success: true, brand: "reborn" });
+    expect(mocks.setClientPortalSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ accountId: 44, sessionVersion: 3 }), true);
+
+    mocks.getActiveClientPortalAccountForSession.mockResolvedValue(null);
+    const disabled = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 2 }, req: {}, res: {} } as TrpcContext);
+    await expect(disabled.clientPortal.collections()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("lets staff list, disable and re-enable only brand-scoped client accounts", async () => {
+    mocks.listClientPortalAccounts.mockResolvedValue([{ account: { id: 44, email: "client@example.com", status: "active" }, organisation: { name: "Example client" } }]);
+    mocks.setClientPortalAccountStatus.mockResolvedValue({ id: 44, status: "disabled" });
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    const nonAdmin = appRouter.createCaller({ user: { id: 8, role: "user" }, req: {}, res: {} } as TrpcContext);
+    await expect(admin.clientAccounts.list({ brand: "reborn" })).resolves.toHaveLength(1);
+    await expect(admin.clientAccounts.setStatus({ accountId: 44, brand: "reborn", status: "disabled" })).resolves.toMatchObject({ account: { status: "disabled" } });
+    expect(mocks.setClientPortalAccountStatus).toHaveBeenCalledWith({ accountId: 44, brand: "reborn", status: "disabled", actorUserId: 7 });
+    await expect(nonAdmin.clientAccounts.list({ brand: "reborn" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("attributes a staff-issued client reset to the initiating Operations administrator", async () => {
+    mocks.getClientPortalAccountForBrand.mockResolvedValue({ id: 44, email: "client@example.com", brand: "reborn", status: "active" });
+    mocks.createClientPasswordResetToken.mockResolvedValue({ account: { id: 44, email: "client@example.com" }, token: "r".repeat(43), resetExpiresAt: new Date("2026-09-01T12:00:00Z") });
+    mocks.sendClientPasswordResetEmail.mockResolvedValue("email_reset");
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: { headers: { host: "reborntech.manus.space" }, protocol: "https" }, res: {} } as TrpcContext);
+    await expect(admin.clientAccounts.sendPasswordReset({ accountId: 44, brand: "reborn" })).resolves.toMatchObject({ delivery: { delivered: true } });
+    expect(mocks.createClientPasswordResetToken).toHaveBeenCalledWith({ email: "client@example.com", actorUserId: 7 });
   });
 });

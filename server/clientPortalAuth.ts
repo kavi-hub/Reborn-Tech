@@ -9,9 +9,10 @@ import { getSessionCookieOptions } from "./_core/cookies";
 const scrypt = promisify(scryptCallback);
 const CLIENT_PORTAL_COOKIE = "__Host-reborn_client_portal";
 const CLIENT_PORTAL_AUDIENCE = "reborn-client-portal";
-const SESSION_SECONDS = 60 * 60 * 8;
+const DEFAULT_SESSION_SECONDS = 60 * 60 * 8;
+const REMEMBERED_SESSION_SECONDS = 60 * 60 * 24 * 30;
 
-export type ClientPortalSession = { accountId: number; organisationId: number; brand: "reborn" | "bulk_gsm"; role: "admin" | "viewer"; email: string };
+export type ClientPortalSession = { accountId: number; organisationId: number; brand: "reborn" | "bulk_gsm"; role: "admin" | "viewer"; email: string; sessionVersion: number };
 
 function signingKey() {
   if (!ENV.cookieSecret) throw new Error("Client portal session signing is not configured");
@@ -32,15 +33,16 @@ export async function verifyClientPassword(password: string, stored: string) {
   return expectedBuffer.length === derived.length && timingSafeEqual(expectedBuffer, derived);
 }
 
-export async function setClientPortalSession(res: Response, req: Request, session: ClientPortalSession) {
-  const token = await new SignJWT({ organisationId: session.organisationId, brand: session.brand, role: session.role, email: session.email })
+export async function setClientPortalSession(res: Response, req: Request, session: ClientPortalSession, rememberMe = false) {
+  const lifetimeSeconds = rememberMe ? REMEMBERED_SESSION_SECONDS : DEFAULT_SESSION_SECONDS;
+  const token = await new SignJWT({ organisationId: session.organisationId, brand: session.brand, role: session.role, email: session.email, sessionVersion: session.sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(String(session.accountId))
     .setAudience(CLIENT_PORTAL_AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_SECONDS}s`)
+    .setExpirationTime(`${lifetimeSeconds}s`)
     .sign(signingKey());
-  res.cookie(CLIENT_PORTAL_COOKIE, token, { ...getSessionCookieOptions(req), maxAge: SESSION_SECONDS * 1000 });
+  res.cookie(CLIENT_PORTAL_COOKIE, token, { ...getSessionCookieOptions(req), maxAge: lifetimeSeconds * 1000 });
 }
 
 export function clearClientPortalSession(res: Response, req: Request) {
@@ -57,8 +59,9 @@ export async function readClientPortalSession(req: Request): Promise<ClientPorta
     const brand = payload.brand;
     const role = payload.role;
     const email = payload.email;
-    if (!Number.isInteger(accountId) || !Number.isInteger(organisationId) || (brand !== "reborn" && brand !== "bulk_gsm") || (role !== "admin" && role !== "viewer") || typeof email !== "string") return null;
-    return { accountId, organisationId, brand, role, email };
+    const sessionVersion = Number(payload.sessionVersion);
+    if (!Number.isInteger(accountId) || !Number.isInteger(organisationId) || !Number.isInteger(sessionVersion) || (brand !== "reborn" && brand !== "bulk_gsm") || (role !== "admin" && role !== "viewer") || typeof email !== "string") return null;
+    return { accountId, organisationId, brand, role, email, sessionVersion };
   } catch {
     return null;
   }

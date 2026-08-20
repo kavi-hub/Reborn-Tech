@@ -27,6 +27,13 @@ export async function sendPortalInvitationEmail(input: { to: string; organisatio
   return sendEmail({ to: input.to, subject: input.resend ? "Your refreshed Reborn Tech client access link" : "Set your Reborn Tech client portal password", html, text: `Reborn has prepared password-gated client access for ${input.organisationName}. Set your portal password here: ${input.portalUrl}. This link is available until ${expires}.` });
 }
 
+export async function sendClientPasswordResetEmail(input: { to: string; resetUrl: string; expiresAt: Date }) {
+  const url = escapeHtml(input.resetUrl);
+  const expires = input.expiresAt.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const html = shell("Reset your client portal password.", `<p style="font-size:16px;line-height:1.6">A password reset was requested for your Reborn Tech client dashboard. Use the button below to choose a new password.</p><p style="margin:28px 0"><a href="${url}" style="display:inline-block;background:#c9f14a;color:#182019;padding:14px 18px;text-decoration:none;font-weight:700">Reset portal password →</a></p><p style="font-size:13px;line-height:1.6;color:#586058">This reset link expires at ${escapeHtml(expires)}. If you did not request it, you can ignore this email.</p>`);
+  return sendEmail({ to: input.to, subject: "Reset your Reborn Tech client portal password", html, text: `A password reset was requested for your Reborn Tech client dashboard. Reset your password here: ${input.resetUrl}. This link expires at ${expires}. If you did not request it, you can ignore this email.` });
+}
+
 export async function sendCollectionStatusEmail(input: { to: string; organisationName: string; collectionReference: string; collectionTitle: string; statusLabel: string; portalUrl: string }) {
   const html = shell("Your collection route has moved forward.", `<p style="font-size:16px;line-height:1.6"><strong>${escapeHtml(input.collectionReference)}</strong> — ${escapeHtml(input.collectionTitle)} is now marked <strong>${escapeHtml(input.statusLabel)}</strong>.</p><p style="margin:28px 0"><a href="${escapeHtml(input.portalUrl)}" style="display:inline-block;background:#c9f14a;color:#182019;padding:14px 18px;text-decoration:none;font-weight:700">Open client dashboard →</a></p><p style="font-size:13px;line-height:1.6;color:#586058">Sign in with your portal password to see the latest customer-visible milestones and released route documents.</p>`);
   return sendEmail({ to: input.to, subject: `Collection update: ${input.collectionReference} is now ${input.statusLabel}`, html, text: `${input.collectionReference} — ${input.collectionTitle} is now ${input.statusLabel}. Sign in to your client dashboard: ${input.portalUrl}` });

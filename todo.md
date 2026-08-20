@@ -188,3 +188,13 @@
 - [x] Add direct password hash and verification regression coverage for client credentials.
 - [x] Add signed client-session round-trip and tamper-rejection regression coverage.
 - [x] Add automated regression coverage that proves the Operations navigation contains no duplicate route entries or React keys.
+
+## ITAD Core milestone 8 — client recovery and account control
+
+- [x] Add single-use, time-limited client password-reset tokens and reset-email delivery without revealing whether an email has an account.
+- [x] Add staff controls to list client accounts by brand, disable or re-enable access, and issue a password-reset email with an activity record.
+- [x] Enforce disabled-client rejection on sign-in and every client-session portal request.
+- [x] Add a welcome and help-contact panel to the password-gated client dashboard.
+- [x] Add a remembered-session option with a longer, explicit client-session lifetime and client-side authentication loading feedback.
+- [x] Add reset, disablement, remembered-session and account-control tests.
+- [x] Attribute staff-issued client password-reset activity to the initiating Operations administrator.

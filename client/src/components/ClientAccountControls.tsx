@@ -1,0 +1,14 @@
+import { KeyRound, LoaderCircle, LockKeyhole, UnlockKeyhole, UsersRound } from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import type { ItadBrand } from "@shared/itadCore";
+import "@/client-account-controls.css";
+
+export function ClientAccountControls({ brand, workspace }: { brand: ItadBrand; workspace: string }) {
+  const utils = trpc.useUtils();
+  const accounts = trpc.clientAccounts.list.useQuery({ brand });
+  const refresh = () => utils.clientAccounts.list.invalidate({ brand });
+  const setStatus = trpc.clientAccounts.setStatus.useMutation({ onSuccess: ({ account }) => { refresh(); toast(account.status === "disabled" ? "Client access disabled" : "Client access re-enabled"); }, onError: (error) => toast("Client access could not be changed", { description: error.message }) });
+  const sendReset = trpc.clientAccounts.sendPasswordReset.useMutation({ onSuccess: ({ delivery }) => toast(delivery.delivered ? "Password reset email sent" : "Reset was recorded; email delivery needs attention"), onError: (error) => toast("Password reset could not be issued", { description: error.message }) });
+  return <section className="client-account-controls"><header><div><p className="ops-kicker">CLIENT ACCESS / {workspace.toUpperCase()}</p><h3>Password-gated client accounts</h3><p>Control customer dashboard access, issue recovery links and retain an auditable access boundary.</p></div><UsersRound size={23} /></header>{accounts.isLoading ? <div className="client-account-loading"><LoaderCircle className="assessment-spin" size={19} />Loading client accounts</div> : accounts.data?.length ? <div className="client-account-list">{accounts.data.map(({ account, organisation }) => <article key={account.id} className={account.status === "disabled" ? "is-disabled" : ""}><div><span>{organisation.name}</span><strong>{account.email}</strong><small>{account.role === "admin" ? "Organisation admin" : "Read-only viewer"} · {account.status === "active" ? "Access active" : "Access disabled"}</small></div><div className="client-account-actions"><button type="button" title="Send password reset" disabled={account.status !== "active" || sendReset.isPending} onClick={() => sendReset.mutate({ accountId: account.id, brand })}><KeyRound size={15} />Reset</button><button type="button" className={account.status === "active" ? "is-danger" : "is-enable"} disabled={setStatus.isPending} onClick={() => setStatus.mutate({ accountId: account.id, brand, status: account.status === "active" ? "disabled" : "active" })}>{account.status === "active" ? <><LockKeyhole size={15} />Disable</> : <><UnlockKeyhole size={15} />Enable</>}</button></div></article>)}</div> : <div className="client-account-empty">No client passwords have been activated in this brand workspace yet. Client access appears here after an invitation recipient sets a password.</div>}</section>;
+}

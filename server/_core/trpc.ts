@@ -2,6 +2,7 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import { getActiveClientPortalAccountForSession } from "../db";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -31,6 +32,10 @@ export const clientPortalProcedure = t.procedure.use(
   t.middleware(async opts => {
     if (!opts.ctx.clientSession) {
       throw new TRPCError({ code: "UNAUTHORIZED", message: "Client portal access required" });
+    }
+    const account = await getActiveClientPortalAccountForSession(opts.ctx.clientSession);
+    if (!account) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Client portal access is no longer active" });
     }
     return opts.next({ ctx: { ...opts.ctx, clientSession: opts.ctx.clientSession } });
   }),
