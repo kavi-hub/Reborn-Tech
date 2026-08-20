@@ -2,13 +2,14 @@ import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { assignCustomerViewerByOrganisationAdmin, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobEvidenceRecord, createSecurazeImportBatch, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getMagicPortalAttachment, getMagicPortalOverview, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOrganisationPortalInvitations, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus } from "./db";
+import { approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getMagicPortalAttachment, getMagicPortalCoreEvidence, getMagicPortalOverview, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOrganisationPortalInvitations, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus, updateItadJobException } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { notifyOwner } from "./_core/notification";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { sendCollectionStatusEmail, sendPortalInvitationEmail } from "./rebornEmail";
+import { mapSecurazeCsv } from "./securazeCsv";
 
 const publicOrigin = (req: { headers?: Record<string, string | string[] | undefined> }) => {
   const origin = req.headers?.origin;
@@ -88,7 +89,6 @@ const coreEvidenceSchema = z.object({
   issuer: z.string().trim().max(180).optional(),
   verificationState: z.enum(["recorded", "reviewed", "verified", "exception"]).default("recorded"),
   evidenceDate: z.coerce.date().optional(),
-  customerVisible: z.boolean().default(false),
   file: coreFileSchema.optional(),
 });
 const securazeImportSchema = z.object({
@@ -99,6 +99,12 @@ const securazeImportSchema = z.object({
   importedRecordCount: z.number().int().min(0).max(1_000_000).default(0),
   exceptionCount: z.number().int().min(0).max(1_000_000).default(0),
   file: coreFileSchema.optional(),
+});
+const securazeCsvImportSchema = z.object({
+  jobId: z.number().int().positive(),
+  brand: itadBrandSchema,
+  importReference: z.string().trim().max(180).optional(),
+  file: coreFileSchema,
 });
 
 export const appRouter = router({
@@ -191,8 +197,20 @@ export const appRouter = router({
         file = { fileName: input.file.fileName, contentType: input.file.contentType, sizeBytes: bytes.length, storageKey: stored.key };
       }
       const { file: _uploadedFile, ...recordInput } = input;
-      const evidence = await createItadJobEvidenceRecord({ ...recordInput, ...file, createdByUserId: ctx.user.id });
+      const evidence = await createItadJobEvidenceRecord({ ...recordInput, ...file, customerVisible: false, createdByUserId: ctx.user.id });
       return { evidence };
+    }),
+    importSecurazeCsv: adminProcedure.input(securazeCsvImportSchema).mutation(async ({ ctx, input }) => {
+      if (input.file.contentType !== "text/csv") throw new TRPCError({ code: "BAD_REQUEST", message: "Use a UTF-8 CSV export for mapped Securaze import" });
+      const bytes = Buffer.from(input.file.contentBase64, "base64");
+      if (!bytes.length || bytes.length > 10_000_000) throw new TRPCError({ code: "BAD_REQUEST", message: "Import files must be between 1 byte and 10 MB" });
+      let mapped;
+      try { mapped = mapSecurazeCsv(bytes.toString("utf8")); } catch (error) { throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "The Securaze CSV could not be mapped" }); }
+      const safeName = input.file.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const stored = await storagePut(`itad-core/jobs/${input.jobId}/securaze/${Date.now()}-${safeName}`, bytes, input.file.contentType);
+      const importBatch = await createSecurazeImportBatch({ jobId: input.jobId, brand: input.brand, importReference: input.importReference, status: "review_required", sourceFileName: input.file.fileName, sourceContentType: input.file.contentType, sourceSizeBytes: bytes.length, storageKey: stored.key, reportedRecordCount: mapped.validRows.length + mapped.exceptions.length, importedRecordCount: mapped.validRows.length, exceptionCount: mapped.exceptions.length, mappingVersion: mapped.mappingVersion, fieldMapping: JSON.stringify(mapped.fieldMapping), sourceHeaderSummary: JSON.stringify(mapped.sourceHeaders), importedByUserId: ctx.user.id });
+      const importedRows = await createItadJobAssetsFromImport({ jobId: input.jobId, brand: input.brand, sourceImportBatchId: importBatch.id, rows: mapped.validRows });
+      return { importBatch: { ...importBatch, importedRecordCount: importedRows }, mapping: { fieldMapping: mapped.fieldMapping, sourceHeaders: mapped.sourceHeaders, exceptions: mapped.exceptions } };
     }),
     recordSecurazeImport: adminProcedure.input(securazeImportSchema).mutation(async ({ ctx, input }) => {
       let file: { sourceFileName: string; sourceContentType: string; sourceSizeBytes: number; storageKey: string } | undefined;
@@ -208,6 +226,10 @@ export const appRouter = router({
       const importBatch = await createSecurazeImportBatch({ ...recordInput, ...file, status: "review_required", importedByUserId: ctx.user.id });
       return { importBatch };
     }),
+    approveEvidence: adminProcedure.input(z.object({ evidenceId: z.number().int().positive(), jobId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ ctx, input }) => ({ evidence: await approveItadJobEvidence({ ...input, approvedByUserId: ctx.user.id }) })),
+    addComment: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema, comment: z.string().trim().min(2).max(3_000) })).mutation(async ({ ctx, input }) => { await createItadJobComment({ ...input, createdByUserId: ctx.user.id }); return { success: true } as const; }),
+    createException: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema, title: z.string().trim().min(2).max(180), detail: z.string().trim().max(3_000).optional() })).mutation(async ({ ctx, input }) => { await createItadJobException({ ...input, ownerUserId: ctx.user.id, createdByUserId: ctx.user.id }); return { success: true } as const; }),
+    updateException: adminProcedure.input(z.object({ exceptionId: z.number().int().positive(), jobId: z.number().int().positive(), brand: itadBrandSchema, status: z.enum(["open", "in_progress", "resolved"]), takeOwnership: z.boolean().default(false) })).mutation(async ({ ctx, input }) => { await updateItadJobException({ ...input, actorUserId: ctx.user.id }); return { success: true } as const; }),
     downloadEvidence: adminProcedure.input(z.object({ evidenceId: z.number().int().positive(), jobId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ input }) => {
       const evidence = await getItadJobEvidenceFile(input);
       if (!evidence.storageKey || !evidence.fileName) throw new TRPCError({ code: "NOT_FOUND", message: "This evidence record does not have an attached file" });
@@ -322,6 +344,11 @@ export const appRouter = router({
     downloadAttachment: publicProcedure.input(z.object({ token: z.string().min(20).max(128), attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
       const attachment = await getMagicPortalAttachment(input.token, input.attachmentId);
       return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
+    }),
+    downloadCoreEvidence: publicProcedure.input(z.object({ token: z.string().min(20).max(128), evidenceId: z.number().int().positive() })).mutation(async ({ input }) => {
+      const evidence = await getMagicPortalCoreEvidence(input.token, input.evidenceId);
+      if (!evidence.storageKey || !evidence.fileName) throw new TRPCError({ code: "NOT_FOUND", message: "This Core evidence file is not available through the invitation link" });
+      return { url: await storageGetSignedUrl(evidence.storageKey), fileName: evidence.fileName };
     }),
   }),
 });

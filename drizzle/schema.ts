@@ -136,6 +136,9 @@ export const itadJobAssets = mysqlTable("itadJobAssets", {
   quantity: int("quantity").default(1).notNull(),
   condition: mysqlEnum("condition", ["unassessed", "working", "repairable", "parts_only", "recycling"]).default("unassessed").notNull(),
   dataHandlingState: mysqlEnum("dataHandlingState", ["not_recorded", "evidence_pending", "evidence_recorded", "exception"]).default("not_recorded").notNull(),
+  sourceImportBatchId: int("sourceImportBatchId"),
+  sourceRowNumber: int("sourceRowNumber"),
+  sourceResult: varchar("sourceResult", { length: 160 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -156,6 +159,8 @@ export const itadJobEvidenceRecords = mysqlTable("itadJobEvidenceRecords", {
   sizeBytes: int("sizeBytes"),
   storageKey: varchar("storageKey", { length: 900 }),
   customerVisible: boolean("customerVisible").default(false).notNull(),
+  customerApprovedAt: timestamp("customerApprovedAt"),
+  customerApprovedByUserId: int("customerApprovedByUserId"),
   createdByUserId: int("createdByUserId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -175,8 +180,48 @@ export const itadJobImportBatches = mysqlTable("itadJobImportBatches", {
   reportedRecordCount: int("reportedRecordCount"),
   importedRecordCount: int("importedRecordCount").default(0).notNull(),
   exceptionCount: int("exceptionCount").default(0).notNull(),
+  mappingVersion: varchar("mappingVersion", { length: 32 }).default("securaze_csv_v1").notNull(),
+  fieldMapping: text("fieldMapping"),
+  sourceHeaderSummary: text("sourceHeaderSummary"),
   importedByUserId: int("importedByUserId").notNull(),
   importedAt: timestamp("importedAt").defaultNow().notNull(),
+});
+
+/** Internal operational context against a Core Job. Comments are intentionally not exposed to customers. */
+export const itadJobComments = mysqlTable("itadJobComments", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  comment: text("comment").notNull(),
+  createdByUserId: int("createdByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/** Assigned operational exception ledger. Resolution is explicit and attributable. */
+export const itadJobExceptions = mysqlTable("itadJobExceptions", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  status: mysqlEnum("status", ["open", "in_progress", "resolved"]).default("open").notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  detail: text("detail"),
+  ownerUserId: int("ownerUserId"),
+  createdByUserId: int("createdByUserId").notNull(),
+  resolvedByUserId: int("resolvedByUserId"),
+  resolvedAt: timestamp("resolvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Immutable operational history for Core Job comments, exception lifecycle and evidence approvals. */
+export const itadJobActivityEvents = mysqlTable("itadJobActivityEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  eventType: mysqlEnum("eventType", ["comment_added", "exception_opened", "exception_updated", "exception_resolved", "evidence_approved", "securaze_imported"]).notNull(),
+  summary: varchar("summary", { length: 500 }).notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 /** Metadata for route-specific inventories and evidence. File bytes remain in secure object storage. */
@@ -212,5 +257,8 @@ export type ItadJob = typeof itadJobs.$inferSelect;
 export type ItadJobAsset = typeof itadJobAssets.$inferSelect;
 export type ItadJobEvidenceRecord = typeof itadJobEvidenceRecords.$inferSelect;
 export type ItadJobImportBatch = typeof itadJobImportBatches.$inferSelect;
+export type ItadJobComment = typeof itadJobComments.$inferSelect;
+export type ItadJobException = typeof itadJobExceptions.$inferSelect;
+export type ItadJobActivityEvent = typeof itadJobActivityEvents.$inferSelect;
 export type CollectionAttachment = typeof collectionAttachments.$inferSelect;
 export type CollectionAuditEvent = typeof collectionAuditEvents.$inferSelect;

@@ -140,3 +140,14 @@
 - [x] Build a concise Reborn operations workflow to manage the deeper Core Job records without adding friction to route creation.
 - [x] Extend the Bulk GSM ITAD Dash to present the same Core Job record depth in its own brand scope.
 - [x] Add API tests for brand isolation, record validation and Core Job evidence access.
+
+## ITAD Core milestone 3 — imports, approval and accountability
+
+- [x] Parse supported Securaze CSV exports through explicit field mapping with required-field validation and review-safe exception reporting.
+- [x] Persist mapped Securaze asset rows against the correctly branded Core Job without automatically asserting an erasure outcome.
+- [x] Let operations explicitly approve individual evidence records for customer visibility and expose only approved Core evidence through magic-link access.
+- [x] Add Core Job comments and owned exception records with clear status, assignment and audit context.
+- [x] Add brand-isolation, field-mapping, approval and direct-link evidence-scope tests.
+- [x] Add a Core Job activity log for comments and exception lifecycle changes, then show its context to operations.
+- [x] Add negative cross-brand tests for advanced Core import, approval, comments, exception updates and evidence release paths.
+- [x] Add an explicit wrong-brand Core evidence-download rejection test.

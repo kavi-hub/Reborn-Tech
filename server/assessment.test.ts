@@ -8,13 +8,19 @@ const mocks = vi.hoisted(() => ({
   exportAssessmentRequests: vi.fn(),
   createCollectionTrack: vi.fn(),
   createItadJobAsset: vi.fn(),
+  createItadJobAssetsFromImport: vi.fn(),
+  createItadJobComment: vi.fn(),
   createItadJobEvidenceRecord: vi.fn(),
+  createItadJobException: vi.fn(),
   createSecurazeImportBatch: vi.fn(),
+  approveItadJobEvidence: vi.fn(),
   getItadJobDetail: vi.fn(),
   getItadJobEvidenceFile: vi.fn(),
+  getMagicPortalCoreEvidence: vi.fn(),
   listAdminCollections: vi.fn(),
   listCustomerPortalCollections: vi.fn(),
   updateCollectionStatus: vi.fn(),
+  updateItadJobException: vi.fn(),
   assignCustomerOrganisationMember: vi.fn(),
   createCustomerPortalInvitation: vi.fn(),
   getPortalInvitation: vi.fn(),
@@ -53,8 +59,12 @@ vi.mock("./db", () => ({
   exportAssessmentRequests: mocks.exportAssessmentRequests,
   createCollectionTrack: mocks.createCollectionTrack,
   createItadJobAsset: mocks.createItadJobAsset,
+  createItadJobAssetsFromImport: mocks.createItadJobAssetsFromImport,
+  createItadJobComment: mocks.createItadJobComment,
   createItadJobEvidenceRecord: mocks.createItadJobEvidenceRecord,
+  createItadJobException: mocks.createItadJobException,
   createSecurazeImportBatch: mocks.createSecurazeImportBatch,
+  approveItadJobEvidence: mocks.approveItadJobEvidence,
   listAdminCollections: mocks.listAdminCollections,
   listCustomerPortalCollections: mocks.listCustomerPortalCollections,
   updateCollectionStatus: mocks.updateCollectionStatus,
@@ -69,10 +79,12 @@ vi.mock("./db", () => ({
   claimCustomerPortalInvitation: mocks.claimCustomerPortalInvitation,
   getMagicPortalOverview: mocks.getMagicPortalOverview,
   getMagicPortalAttachment: mocks.getMagicPortalAttachment,
+  getMagicPortalCoreEvidence: mocks.getMagicPortalCoreEvidence,
   assignCustomerViewerByOrganisationAdmin: mocks.assignCustomerViewerByOrganisationAdmin,
   getCustomerOrganisationMembership: mocks.getCustomerOrganisationMembership,
   getItadJobDetail: mocks.getItadJobDetail,
   getItadJobEvidenceFile: mocks.getItadJobEvidenceFile,
+  updateItadJobException: mocks.updateItadJobException,
   createCollectionAttachment: mocks.createCollectionAttachment,
   listAdminCollectionAttachments: mocks.listAdminCollectionAttachments,
   getAdminCollectionAttachment: mocks.getAdminCollectionAttachment,
@@ -101,6 +113,7 @@ vi.mock("./storage", () => ({
 
 import { assessmentInputSchema, appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { mapSecurazeCsv } from "./securazeCsv";
 
 const validRequest = {
   fullName: "Amina Johnson",
@@ -396,5 +409,85 @@ describe("assessment input validation", () => {
 
     await expect(publicCaller.magicPortal.downloadAttachment({ token: "a".repeat(24), attachmentId: 8 })).resolves.toEqual({ url: "https://files.example.com/signed-inventory", fileName: "inventory.pdf" });
     expect(mocks.getMagicPortalAttachment).toHaveBeenCalledWith("a".repeat(24), 8);
+  });
+
+  it("maps a Securaze CSV through explicit headers while holding invalid and duplicate rows as review exceptions", () => {
+    const mapped = mapSecurazeCsv("Serial Number,Result,Device Type,Manufacturer\nSN-001,Completed,Laptop,Dell\nSN-002,,Laptop,Lenovo\nSN-001,Completed,Laptop,Dell");
+
+    expect(mapped.fieldMapping).toMatchObject({ serialNumber: "Serial Number", sourceResult: "Result", assetCategory: "Device Type" });
+    expect(mapped.validRows).toEqual([expect.objectContaining({ serialNumber: "SN-001", assetCategory: "Laptop", sourceResult: "Completed", dataHandlingState: "evidence_pending" })]);
+    expect(mapped.exceptions).toEqual(expect.arrayContaining([expect.objectContaining({ rowNumber: 3, code: "missing_result" }), expect.objectContaining({ rowNumber: 4, code: "duplicate_serial" })]));
+    expect(() => mapSecurazeCsv("Serial Number,Device Type\nSN-001,Laptop")).toThrow("result/status");
+  });
+
+  it("stores mapped Securaze rows in the selected brand without converting raw source results into verified evidence", async () => {
+    mocks.storagePut.mockResolvedValue({ key: "itad-core/jobs/44/securaze/export.csv", url: "/manus-storage/itad-core/jobs/44/securaze/export.csv" });
+    mocks.createSecurazeImportBatch.mockResolvedValue({ id: 61, jobId: 44, brand: "bulk_gsm", importedRecordCount: 1, exceptionCount: 0 });
+    mocks.createItadJobAssetsFromImport.mockResolvedValue(1);
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    const source = "Serial Number,Result,Device Type\nBG-101,Completed,Laptop";
+
+    await expect(admin.itadCore.importSecurazeCsv({ jobId: 44, brand: "bulk_gsm", importReference: "SZ-BG-101", file: { fileName: "securaze.csv", contentType: "text/csv", contentBase64: Buffer.from(source).toString("base64") } })).resolves.toMatchObject({ importBatch: { id: 61 }, mapping: { fieldMapping: { serialNumber: "Serial Number" } } });
+
+    expect(mocks.createSecurazeImportBatch).toHaveBeenCalledWith(expect.objectContaining({ jobId: 44, brand: "bulk_gsm", status: "review_required", importedRecordCount: 1, exceptionCount: 0, mappingVersion: "securaze_csv_v1" }));
+    expect(mocks.createItadJobAssetsFromImport).toHaveBeenCalledWith(expect.objectContaining({ jobId: 44, brand: "bulk_gsm", sourceImportBatchId: 61, rows: [expect.objectContaining({ serialNumber: "BG-101", sourceResult: "Completed", dataHandlingState: "evidence_pending" })] }));
+  });
+
+  it("requires an explicit admin approval before a Core evidence record can enter the customer channel", async () => {
+    mocks.approveItadJobEvidence.mockResolvedValue({ id: 17, jobId: 44, brand: "reborn", customerVisible: true, customerApprovedAt: new Date() });
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.approveEvidence({ evidenceId: 17, jobId: 44, brand: "reborn" })).resolves.toMatchObject({ evidence: { customerVisible: true } });
+    expect(mocks.approveItadJobEvidence).toHaveBeenCalledWith({ evidenceId: 17, jobId: 44, brand: "reborn", approvedByUserId: 7 });
+  });
+
+  it("keeps Core comments and exception ownership explicitly attributed to the acting operator", async () => {
+    mocks.createItadJobComment.mockResolvedValue(undefined);
+    mocks.createItadJobException.mockResolvedValue(undefined);
+    mocks.updateItadJobException.mockResolvedValue(undefined);
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.addComment({ jobId: 44, brand: "reborn", comment: "Awaiting manifest confirmation." })).resolves.toEqual({ success: true });
+    await expect(admin.itadCore.createException({ jobId: 44, brand: "reborn", title: "Serial mismatch", detail: "One source serial requires review." })).resolves.toEqual({ success: true });
+    await expect(admin.itadCore.updateException({ exceptionId: 8, jobId: 44, brand: "reborn", status: "in_progress", takeOwnership: true })).resolves.toEqual({ success: true });
+
+    expect(mocks.createItadJobComment).toHaveBeenCalledWith({ jobId: 44, brand: "reborn", comment: "Awaiting manifest confirmation.", createdByUserId: 7 });
+    expect(mocks.createItadJobException).toHaveBeenCalledWith({ jobId: 44, brand: "reborn", title: "Serial mismatch", detail: "One source serial requires review.", ownerUserId: 7, createdByUserId: 7 });
+    expect(mocks.updateItadJobException).toHaveBeenCalledWith({ exceptionId: 8, jobId: 44, brand: "reborn", status: "in_progress", takeOwnership: true, actorUserId: 7 });
+  });
+
+  it("releases only approved Core evidence through the invitation token scope", async () => {
+    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
+    mocks.getMagicPortalCoreEvidence.mockResolvedValueOnce({ id: 22, storageKey: "itad-core/jobs/44/evidence/approved.pdf", fileName: "approved.pdf" });
+    mocks.storageGetSignedUrl.mockResolvedValueOnce("https://files.example.com/approved-core-evidence");
+
+    await expect(publicCaller.magicPortal.downloadCoreEvidence({ token: "c".repeat(24), evidenceId: 22 })).resolves.toEqual({ url: "https://files.example.com/approved-core-evidence", fileName: "approved.pdf" });
+    expect(mocks.getMagicPortalCoreEvidence).toHaveBeenCalledWith("c".repeat(24), 22);
+
+    mocks.getMagicPortalCoreEvidence.mockRejectedValueOnce(new Error("This Core evidence file is not available through the invitation link"));
+    await expect(publicCaller.magicPortal.downloadCoreEvidence({ token: "c".repeat(24), evidenceId: 99 })).rejects.toThrow("not available");
+  });
+
+  it("fails closed when an advanced Core action targets a Job from another brand partition", async () => {
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    mocks.storagePut.mockResolvedValue({ key: "itad-core/jobs/44/securaze/cross-brand.csv", url: "/manus-storage/itad-core/jobs/44/securaze/cross-brand.csv" });
+    mocks.createSecurazeImportBatch.mockRejectedValueOnce(new Error("ITAD Core Job could not be found in this brand workspace"));
+    mocks.approveItadJobEvidence.mockRejectedValueOnce(new Error("Evidence record could not be found in this Core Job"));
+    mocks.createItadJobComment.mockRejectedValueOnce(new Error("ITAD Core Job could not be found in this brand workspace"));
+    mocks.updateItadJobException.mockRejectedValueOnce(new Error("Exception record could not be found in this Core Job"));
+    const source = "Serial Number,Result\nRB-999,Completed";
+
+    await expect(admin.itadCore.importSecurazeCsv({ jobId: 44, brand: "bulk_gsm", file: { fileName: "cross-brand.csv", contentType: "text/csv", contentBase64: Buffer.from(source).toString("base64") } })).rejects.toThrow("brand workspace");
+    await expect(admin.itadCore.approveEvidence({ evidenceId: 17, jobId: 44, brand: "bulk_gsm" })).rejects.toThrow("could not be found");
+    await expect(admin.itadCore.addComment({ jobId: 44, brand: "bulk_gsm", comment: "This must not cross brands." })).rejects.toThrow("brand workspace");
+    await expect(admin.itadCore.updateException({ exceptionId: 8, jobId: 44, brand: "bulk_gsm", status: "resolved", takeOwnership: true })).rejects.toThrow("could not be found");
+  });
+
+  it("rejects a Core evidence download when the requested brand does not own the Job", async () => {
+    mocks.getItadJobEvidenceFile.mockRejectedValueOnce(new Error("This evidence record does not have an attached file in this Core Job"));
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.downloadEvidence({ evidenceId: 22, jobId: 44, brand: "bulk_gsm" })).rejects.toThrow("Core Job");
+    expect(mocks.getItadJobEvidenceFile).toHaveBeenCalledWith({ evidenceId: 22, jobId: 44, brand: "bulk_gsm" });
   });
 });
