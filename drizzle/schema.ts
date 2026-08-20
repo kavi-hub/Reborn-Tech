@@ -101,7 +101,19 @@ export const collectionAttachments = mysqlTable("collectionAttachments", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+/** Immutable event ledger for changes to a tracked collection route. */
+export const collectionAuditEvents = mysqlTable("collectionAuditEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  collectionId: int("collectionId").notNull(),
+  eventType: mysqlEnum("eventType", ["route_created", "status_changed", "customer_access_changed", "attachment_uploaded", "attachment_removed"]).notNull(),
+  summary: varchar("summary", { length: 600 }).notNull(),
+  customerVisible: boolean("customerVisible").default(false).notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type CustomerOrganisation = typeof customerOrganisations.$inferSelect;
 export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inferSelect;
 export type CollectionTrack = typeof collectionTracks.$inferSelect;
 export type CollectionAttachment = typeof collectionAttachments.$inferSelect;
+export type CollectionAuditEvent = typeof collectionAuditEvents.$inferSelect;

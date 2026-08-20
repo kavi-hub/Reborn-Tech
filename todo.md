@@ -86,3 +86,9 @@
 - [x] Restrict attachment upload and management to Reborn operations admins.
 - [x] Give assigned customer organisations scoped, read-only visibility of their route attachments.
 - [x] Add upload, download and deletion controls with file-type and size validation.
+
+## Collection audit history
+
+- [x] Store immutable collection audit events for route creation, status changes, customer-access changes and attachment activity.
+- [x] Record the acting user, event time, event type and a concise route-specific event summary.
+- [x] Show operations users the full route audit history and expose customer-safe operational milestones in the portal.

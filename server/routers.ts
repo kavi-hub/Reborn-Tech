@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { assignCustomerOrganisationMember, assignCustomerViewerByOrganisationAdmin, createAssessmentRequest, createCollectionAttachment, createCollectionTrack, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, listAdminCollectionAttachments, listAdminCollections, listAssessmentRequests, listCustomerCollectionAttachments, listCustomerPortalCollections, updateAssessmentStatus, updateCollectionStatus } from "./db";
+import { assignCustomerOrganisationMember, assignCustomerViewerByOrganisationAdmin, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, updateAssessmentStatus, updateCollectionStatus } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -122,22 +122,27 @@ export const appRouter = router({
       scheduledFor: z.coerce.date().optional(),
       collectionPostcode: z.string().trim().max(24).optional(),
       customerNote: z.string().trim().max(2000).optional(),
-    })).mutation(async ({ input }) => {
-      await createCollectionTrack(input);
+    })).mutation(async ({ ctx, input }) => {
+      const created = await createCollectionTrack(input);
+      await createCollectionAuditEvent({ collectionId: created.id, eventType: "route_created", summary: `Collection route ${created.reference} opened`, customerVisible: true, actorUserId: ctx.user.id });
       return { success: true } as const;
     }),
-    updateStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: collectionStatusSchema })).mutation(async ({ input }) => {
+    updateStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: collectionStatusSchema })).mutation(async ({ ctx, input }) => {
       await updateCollectionStatus(input.id, input.status);
+      await createCollectionAuditEvent({ collectionId: input.id, eventType: "status_changed", summary: `Collection status changed to ${input.status.replaceAll("_", " ")}`, customerVisible: true, actorUserId: ctx.user.id });
       return { success: true } as const;
     }),
     assignMember: adminProcedure.input(z.object({
       organisationId: z.number().int().positive(),
       email: z.string().trim().email().max(320),
       role: z.enum(["admin", "viewer"]),
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ ctx, input }) => {
       await assignCustomerOrganisationMember(input);
+      const collectionIds = await listCollectionIdsForOrganisation(input.organisationId);
+      await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: `Customer portal ${input.role} access assigned`, customerVisible: false, actorUserId: ctx.user.id })));
       return { success: true } as const;
     }),
+    listAudit: adminProcedure.input(z.object({ collectionId: z.number().int().positive() })).query(({ input }) => listAdminCollectionAuditEvents(input.collectionId)),
     listAttachments: adminProcedure.input(z.object({ collectionId: z.number().int().positive() })).query(({ input }) => listAdminCollectionAttachments(input.collectionId)),
     uploadAttachment: adminProcedure.input(attachmentUploadSchema).mutation(async ({ ctx, input }) => {
       if (!supportedAttachmentTypes.has(input.contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: "Use PDF, CSV, Excel, Word, PNG or JPEG files only" });
@@ -146,20 +151,24 @@ export const appRouter = router({
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const stored = await storagePut(`collection-routes/${input.collectionId}/${Date.now()}-${safeName}`, data, input.contentType);
       await createCollectionAttachment({ collectionId: input.collectionId, attachmentType: input.attachmentType, fileName: input.fileName, contentType: input.contentType, sizeBytes: data.length, storageKey: stored.key, customerVisible: input.customerVisible, uploadedByUserId: ctx.user.id });
+      await createCollectionAuditEvent({ collectionId: input.collectionId, eventType: "attachment_uploaded", summary: `${input.attachmentType === "inventory" ? "Asset inventory" : "Evidence file"} added: ${input.fileName}`, customerVisible: input.customerVisible, actorUserId: ctx.user.id });
       return { success: true } as const;
     }),
     downloadAttachment: adminProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
       const attachment = await getAdminCollectionAttachment(input.attachmentId);
       return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
     }),
-    deleteAttachment: adminProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
+    deleteAttachment: adminProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const attachment = await getAdminCollectionAttachment(input.attachmentId);
       await deleteCollectionAttachment(input.attachmentId);
+      await createCollectionAuditEvent({ collectionId: attachment.collectionId, eventType: "attachment_removed", summary: `${attachment.attachmentType === "inventory" ? "Asset inventory" : "Evidence file"} removed: ${attachment.fileName}`, customerVisible: attachment.customerVisible, actorUserId: ctx.user.id });
       return { success: true } as const;
     }),
   }),
   customerPortal: router({
     collections: protectedProcedure.query(({ ctx }) => listCustomerPortalCollections(ctx.user.id)),
     attachments: protectedProcedure.query(({ ctx }) => listCustomerCollectionAttachments(ctx.user.id)),
+    auditEvents: protectedProcedure.query(({ ctx }) => listCustomerCollectionAuditEvents(ctx.user.id)),
     downloadAttachment: protectedProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const attachment = await getCustomerCollectionAttachment(ctx.user.id, input.attachmentId);
       return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
@@ -170,6 +179,8 @@ export const appRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Only an organisation admin can grant viewer access" });
       }
       await assignCustomerViewerByOrganisationAdmin({ actorUserId: ctx.user.id, ...input });
+      const collectionIds = await listCollectionIdsForOrganisation(input.organisationId);
+      await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: "Customer portal viewer access granted", customerVisible: false, actorUserId: ctx.user.id })));
       return { success: true } as const;
     }),
   }),

@@ -21,6 +21,10 @@ const mocks = vi.hoisted(() => ({
   getCustomerCollectionAttachment: vi.fn(),
   storagePut: vi.fn(),
   storageGetSignedUrl: vi.fn(),
+  createCollectionAuditEvent: vi.fn(),
+  listAdminCollectionAuditEvents: vi.fn(),
+  listCollectionIdsForOrganisation: vi.fn(),
+  listCustomerCollectionAuditEvents: vi.fn(),
   notifyOwner: vi.fn(),
 }));
 
@@ -43,6 +47,10 @@ vi.mock("./db", () => ({
   deleteCollectionAttachment: mocks.deleteCollectionAttachment,
   listCustomerCollectionAttachments: mocks.listCustomerCollectionAttachments,
   getCustomerCollectionAttachment: mocks.getCustomerCollectionAttachment,
+  createCollectionAuditEvent: mocks.createCollectionAuditEvent,
+  listAdminCollectionAuditEvents: mocks.listAdminCollectionAuditEvents,
+  listCollectionIdsForOrganisation: mocks.listCollectionIdsForOrganisation,
+  listCustomerCollectionAuditEvents: mocks.listCustomerCollectionAuditEvents,
 }));
 
 vi.mock("./_core/notification", () => ({
@@ -68,6 +76,8 @@ const validRequest = {
 describe("assessment input validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.createCollectionAuditEvent.mockResolvedValue(undefined);
+    mocks.listCollectionIdsForOrganisation.mockResolvedValue([]);
   });
   it("accepts a valid public assessment request and defaults operational flags", () => {
     const parsed = assessmentInputSchema.parse(validRequest);
@@ -139,12 +149,14 @@ describe("assessment input validation", () => {
   });
 
   it("allows an admin to open a tracked collection route", async () => {
-    mocks.createCollectionTrack.mockResolvedValue(undefined);
+    mocks.createCollectionTrack.mockResolvedValue({ id: 44, reference: "RB-2026-001" });
+    mocks.createCollectionAuditEvent.mockResolvedValue(undefined);
     const ctx = { user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext;
     const caller = appRouter.createCaller(ctx);
 
     await expect(caller.collections.create({ organisationName: "Northwind Services", reference: "RB-2026-001", title: "London device collection" })).resolves.toEqual({ success: true });
     expect(mocks.createCollectionTrack).toHaveBeenCalledWith(expect.objectContaining({ organisationName: "Northwind Services", status: "planned" }));
+    expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 44, eventType: "route_created", actorUserId: 1 }));
   });
 
   it("passes the signed-in customer admin to the scoped viewer-grant boundary", async () => {
@@ -182,6 +194,7 @@ describe("assessment input validation", () => {
     await expect(admin.collections.uploadAttachment({ collectionId: 4, attachmentType: "inventory", fileName: "inventory.pdf", contentType: "application/pdf", contentBase64: "c2FtcGxl", customerVisible: true })).resolves.toEqual({ success: true });
     expect(mocks.storagePut).toHaveBeenCalledWith(expect.stringContaining("collection-routes/4"), expect.any(Buffer), "application/pdf");
     expect(mocks.createCollectionAttachment).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 4, attachmentType: "inventory", customerVisible: true, uploadedByUserId: 1 }));
+    expect(mocks.createCollectionAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ collectionId: 4, eventType: "attachment_uploaded", customerVisible: true, actorUserId: 1 }));
   });
 
   it("rejects route attachment uploads from non-admin users", async () => {
@@ -194,5 +207,12 @@ describe("assessment input validation", () => {
     const customer = appRouter.createCaller({ user: { id: 82, role: "user" }, req: {}, res: {} } as TrpcContext);
     await expect(customer.customerPortal.attachments()).resolves.toEqual([]);
     expect(mocks.listCustomerCollectionAttachments).toHaveBeenCalledWith(82);
+  });
+
+  it("returns only customer-safe audit events for the signed-in organisation member", async () => {
+    mocks.listCustomerCollectionAuditEvents.mockResolvedValue([]);
+    const customer = appRouter.createCaller({ user: { id: 82, role: "user" }, req: {}, res: {} } as TrpcContext);
+    await expect(customer.customerPortal.auditEvents()).resolves.toEqual([]);
+    expect(mocks.listCustomerCollectionAuditEvents).toHaveBeenCalledWith(82);
   });
 });

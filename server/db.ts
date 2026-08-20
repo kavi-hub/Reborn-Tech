@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionAttachments, collectionTracks, customerOrganisationMembers, customerOrganisations, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
+import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, InsertAssessmentRequest, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -185,6 +185,11 @@ export async function createCollectionTrack(input: {
     collectionPostcode: input.collectionPostcode || null,
     customerNote: input.customerNote || null,
   });
+  const created = await db.select().from(collectionTracks)
+    .where(and(eq(collectionTracks.organisationId, organisation.id), eq(collectionTracks.reference, input.reference)))
+    .orderBy(desc(collectionTracks.createdAt)).limit(1);
+  if (!created[0]) throw new Error("Collection route could not be created");
+  return created[0];
 }
 
 export async function listAdminCollections() {
@@ -225,6 +230,29 @@ export async function deleteCollectionAttachment(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
   await db.delete(collectionAttachments).where(eq(collectionAttachments.id, id));
+}
+
+export type CollectionAuditEventType = "route_created" | "status_changed" | "customer_access_changed" | "attachment_uploaded" | "attachment_removed";
+
+export async function createCollectionAuditEvent(input: { collectionId: number; eventType: CollectionAuditEventType; summary: string; customerVisible: boolean; actorUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Collection audit storage is temporarily unavailable");
+  await db.insert(collectionAuditEvents).values(input);
+}
+
+export async function listAdminCollectionAuditEvents(collectionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Collection audit storage is temporarily unavailable");
+  return db.select({ event: collectionAuditEvents, actor: users }).from(collectionAuditEvents)
+    .leftJoin(users, eq(collectionAuditEvents.actorUserId, users.id))
+    .where(eq(collectionAuditEvents.collectionId, collectionId))
+    .orderBy(desc(collectionAuditEvents.createdAt));
+}
+
+export async function listCollectionIdsForOrganisation(organisationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Collection audit storage is temporarily unavailable");
+  return db.select({ id: collectionTracks.id }).from(collectionTracks).where(eq(collectionTracks.organisationId, organisationId));
 }
 
 export async function assignCustomerOrganisationMember(input: { organisationId: number; email: string; role: "admin" | "viewer" }) {
@@ -283,6 +311,16 @@ export async function getCustomerCollectionAttachment(userId: number, attachment
   const match = attachments.find((entry) => entry.attachment.id === attachmentId);
   if (!match) throw new Error("Attachment not found or not available to your organisation");
   return match.attachment;
+}
+
+export async function listCustomerCollectionAuditEvents(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Collection audit storage is temporarily unavailable");
+  return db.select({ event: collectionAuditEvents, collection: collectionTracks }).from(customerOrganisationMembers)
+    .innerJoin(collectionTracks, eq(collectionTracks.organisationId, customerOrganisationMembers.organisationId))
+    .innerJoin(collectionAuditEvents, eq(collectionAuditEvents.collectionId, collectionTracks.id))
+    .where(and(eq(customerOrganisationMembers.userId, userId), eq(collectionAuditEvents.customerVisible, true)))
+    .orderBy(desc(collectionAuditEvents.createdAt));
 }
 
 export async function listCustomerPortalCollections(userId: number) {
