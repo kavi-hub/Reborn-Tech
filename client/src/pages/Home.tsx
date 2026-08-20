@@ -250,7 +250,7 @@ export default function Home() {
           <div className="capability-strip" aria-label="Reborn operational capabilities">
             <article><span>HUB / 01</span><strong>London</strong><p>Collection, intake and ITAD operations through the Bulk GSM hub.</p></article>
             <article><span>HUB / 02</span><strong>Chorley</strong><p>Processing, repair and recovery operations at Coppull Mill.</p></article>
-            <article><span>MODEL / JV</span><strong>One joined route</strong><p>Collection, security, reuse and recovery designed as one accountable process.</p></article>
+            <article><span>REBORN / TECH</span><strong>One joined route</strong><p>Collection, security, reuse and recovery designed as one accountable process.</p></article>
           </div>
         </section>
 
