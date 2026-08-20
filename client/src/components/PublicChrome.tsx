@@ -9,8 +9,8 @@ const navigation = [
   { href: "/security", label: "Security" },
   { href: "/impact", label: "Impact" },
   { href: "/#locations", label: "Locations" },
-  { href: "/portal", label: "Customer portal", portal: true },
-  { href: "/operations", label: "Operations" },
+  { href: "/login", label: "Customer portal", portal: true },
+  { href: "/login?access=team", label: "Operations" },
 ];
 
 export function SiteHeader({ active }: { active?: string }) {
@@ -39,7 +39,7 @@ export function SiteFooter() {
     <footer className="site-footer">
       <a className="brand-lockup footer-brand" href="/" aria-label="Reborn Tech home"><span className="brand-mark-field"><img className="brand-mark" src={logo} alt="" /></span><span className="brand-name">REBORN<span>TECH</span></span></a>
       <p>Secure ITAD. Second life, verified.</p>
-      <div><a href="/operations">Operations access</a><a href="/privacy">Privacy information</a><span>Powered by Bulk GSM capability</span><span>© {new Date().getFullYear()} Reborn Tech</span></div>
+      <div><a href="/login?access=team">Operations access</a><a href="/privacy">Privacy information</a><span>Powered by Bulk GSM capability</span><span>© {new Date().getFullYear()} Reborn Tech</span></div>
     </footer>
   );
 }

@@ -27,6 +27,15 @@ const requireUser = t.middleware(async opts => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
+export const clientPortalProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    if (!opts.ctx.clientSession) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Client portal access required" });
+    }
+    return opts.next({ ctx: { ...opts.ctx, clientSession: opts.ctx.clientSession } });
+  }),
+);
+
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;

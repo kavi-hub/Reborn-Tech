@@ -177,3 +177,14 @@
 - [x] Display due dates and SLA state in the exception review workflow and allow staff to set a date when opening or updating an exception.
 - [x] Add tests for due-date validation, SLA edge cases, admin-directory access and KPI-driven filters.
 - [x] Add explicit API tests rejecting invalid due-date input and denying the operations-admin directory to non-admin callers.
+
+## ITAD Core milestone 7 — unified secure access and critical pass
+
+- [x] Diagnose and fix the reported Operations runtime errors, documenting the root causes through regression tests.
+- [x] Add password-based client accounts that are activated through an existing secure invitation and scoped to the client organisation.
+- [x] Add a unified `/login` page where staff and clients enter from the same page and are routed only to their permitted dashboard.
+- [x] Keep Operations protected for staff admins and client dashboards protected for the correct client account or scoped invitation.
+- [x] Run a critical pass covering authentication boundaries, Operations rendering, invitation activation, client routing and production build.
+- [x] Add direct password hash and verification regression coverage for client credentials.
+- [x] Add signed client-session round-trip and tamper-rejection regression coverage.
+- [x] Add automated regression coverage that proves the Operations navigation contains no duplicate route entries or React keys.

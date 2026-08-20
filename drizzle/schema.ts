@@ -93,6 +93,20 @@ export const customerPortalInvitations = mysqlTable("customerPortalInvitations",
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+/** Password credentials for a customer portal account activated from a verified invitation. */
+export const customerPortalAccounts = mysqlTable("customerPortalAccounts", {
+  id: int("id").autoincrement().primaryKey(),
+  organisationId: int("organisationId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).default("reborn").notNull(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  role: mysqlEnum("role", ["admin", "viewer"]).default("viewer").notNull(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  activatedFromInvitationId: int("activatedFromInvitationId").notNull(),
+  lastSignedInAt: timestamp("lastSignedInAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 /** Collection milestones visible to the Reborn team and scoped customer-organisation members. */
 export const collectionTracks = mysqlTable("collectionTracks", {
   id: int("id").autoincrement().primaryKey(),

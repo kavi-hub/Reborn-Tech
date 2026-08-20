@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
+import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 import { calculateCoreJobExceptionKpis } from "../shared/coreJobKpis";
@@ -117,6 +117,52 @@ export async function claimCustomerPortalInvitation(input: { token: string; user
   if (invitation[0].email !== input.email.toLowerCase()) throw new Error("Please sign in with the work email that received this invitation");
   await claimInvitationRecord(invitation[0], input.userId, new Date());
   return { alreadyClaimed: false };
+}
+
+export async function getClientAccountActivationInvitation(token: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const invitation = await db.select().from(customerPortalInvitations).where(eq(customerPortalInvitations.token, token)).limit(1);
+  if (!invitation[0] || invitation[0].status === "revoked") throw new Error("This client access invitation is not recognised");
+  if (invitation[0].expiresAt <= new Date()) {
+    if (invitation[0].status !== "expired") await db.update(customerPortalInvitations).set({ status: "expired" }).where(eq(customerPortalInvitations.id, invitation[0].id));
+    throw new Error("This client access invitation has expired");
+  }
+  return invitation[0];
+}
+
+export async function activateClientPortalAccount(input: { token: string; passwordHash: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const invitation = await getClientAccountActivationInvitation(input.token);
+  const email = invitation.email.toLowerCase();
+  const existing = await db.select().from(customerPortalAccounts).where(eq(customerPortalAccounts.email, email)).limit(1);
+  if (existing[0]) throw new Error("This work email already has client portal access. Please sign in instead.");
+  await db.insert(customerPortalAccounts).values({ organisationId: invitation.organisationId, brand: invitation.brand, email, role: invitation.role, passwordHash: input.passwordHash, activatedFromInvitationId: invitation.id, lastSignedInAt: new Date() });
+  const account = await db.select().from(customerPortalAccounts).where(eq(customerPortalAccounts.email, email)).limit(1);
+  await db.update(customerPortalInvitations).set({ status: "claimed", claimedAt: new Date() }).where(eq(customerPortalInvitations.id, invitation.id));
+  if (!account[0]) throw new Error("Client portal account could not be activated");
+  return account[0];
+}
+
+export async function getClientPortalAccountByEmail(email: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const account = await db.select().from(customerPortalAccounts).where(eq(customerPortalAccounts.email, email.toLowerCase())).limit(1);
+  return account[0] ?? null;
+}
+
+export async function getClientPortalAccountById(accountId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const account = await db.select().from(customerPortalAccounts).where(eq(customerPortalAccounts.id, accountId)).limit(1);
+  return account[0] ?? null;
+}
+
+export async function recordClientPortalSignIn(accountId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  await db.update(customerPortalAccounts).set({ lastSignedInAt: new Date() }).where(eq(customerPortalAccounts.id, accountId));
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -625,6 +671,59 @@ export async function listCustomerPortalCollections(userId: number) {
     .innerJoin(collectionTracks, eq(collectionTracks.organisationId, customerOrganisations.id))
     .where(eq(customerOrganisationMembers.userId, userId))
     .orderBy(desc(collectionTracks.createdAt));
+}
+
+export async function listClientPortalCollections(organisationId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  return db.select({ collection: collectionTracks, organisation: customerOrganisations }).from(collectionTracks)
+    .innerJoin(customerOrganisations, eq(customerOrganisations.id, collectionTracks.organisationId))
+    .where(and(eq(collectionTracks.organisationId, organisationId), eq(collectionTracks.brand, brand)))
+    .orderBy(desc(collectionTracks.createdAt));
+}
+
+export async function listClientPortalAttachments(organisationId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  return db.select({ attachment: collectionAttachments, collection: collectionTracks }).from(collectionTracks)
+    .innerJoin(collectionAttachments, eq(collectionAttachments.collectionId, collectionTracks.id))
+    .where(and(eq(collectionTracks.organisationId, organisationId), eq(collectionTracks.brand, brand), eq(collectionAttachments.customerVisible, true)))
+    .orderBy(desc(collectionAttachments.createdAt));
+}
+
+export async function listClientPortalAuditEvents(organisationId: number, brand: ItadBrand, page: number, pageSize: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  const where = and(eq(collectionTracks.organisationId, organisationId), eq(collectionTracks.brand, brand), eq(collectionAuditEvents.customerVisible, true));
+  const [{ total }] = await db.select({ total: count() }).from(collectionTracks).innerJoin(collectionAuditEvents, eq(collectionAuditEvents.collectionId, collectionTracks.id)).where(where);
+  const events = await db.select({ event: collectionAuditEvents, collection: collectionTracks }).from(collectionTracks).innerJoin(collectionAuditEvents, eq(collectionAuditEvents.collectionId, collectionTracks.id)).where(where).orderBy(desc(collectionAuditEvents.createdAt)).limit(pageSize).offset((page - 1) * pageSize);
+  return { events, total };
+}
+
+export async function getClientPortalAttachment(organisationId: number, brand: ItadBrand, attachmentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Attachment storage metadata is temporarily unavailable");
+  const attachment = await db.select({ attachment: collectionAttachments }).from(collectionTracks).innerJoin(collectionAttachments, eq(collectionAttachments.collectionId, collectionTracks.id))
+    .where(and(eq(collectionTracks.organisationId, organisationId), eq(collectionTracks.brand, brand), eq(collectionAttachments.id, attachmentId), eq(collectionAttachments.customerVisible, true))).limit(1);
+  if (!attachment[0]) throw new Error("This file is not available through your client account");
+  return attachment[0].attachment;
+}
+
+export async function listClientPortalCoreEvidence(organisationId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  return db.select({ evidence: itadJobEvidenceRecords, job: itadJobs }).from(itadJobs).innerJoin(itadJobEvidenceRecords, eq(itadJobEvidenceRecords.jobId, itadJobs.id))
+    .where(and(eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(itadJobEvidenceRecords.brand, brand), eq(itadJobEvidenceRecords.customerVisible, true), isNotNull(itadJobEvidenceRecords.customerApprovedAt)))
+    .orderBy(desc(itadJobEvidenceRecords.customerApprovedAt));
+}
+
+export async function getClientPortalCoreEvidence(organisationId: number, brand: ItadBrand, evidenceId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const evidence = await db.select({ evidence: itadJobEvidenceRecords }).from(itadJobs).innerJoin(itadJobEvidenceRecords, eq(itadJobEvidenceRecords.jobId, itadJobs.id))
+    .where(and(eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(itadJobEvidenceRecords.brand, brand), eq(itadJobEvidenceRecords.id, evidenceId), eq(itadJobEvidenceRecords.customerVisible, true), isNotNull(itadJobEvidenceRecords.customerApprovedAt))).limit(1);
+  if (!evidence[0]?.evidence.storageKey || !evidence[0].evidence.fileName) throw new Error("This Core evidence file is not available through your client account");
+  return evidence[0].evidence;
 }
 
 async function getActivePortalInvitation(token: string) {

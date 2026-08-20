@@ -2,15 +2,16 @@ import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getMagicPortalAttachment, getMagicPortalCoreEvidence, getMagicPortalOverview, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus, updateItadJobException } from "./db";
+import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getAdminCollectionAttachment, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus, updateItadJobException } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, clientPortalProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { notifyOwner } from "./_core/notification";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { sendCollectionStatusEmail, sendExceptionLifecycleEmail, sendPortalInvitationEmail } from "./rebornEmail";
 import { mapSecurazeCsv } from "./securazeCsv";
 import { createSecurazePreviewReceipt, securazeFileHash, verifySecurazePreviewReceipt } from "./securazePreview";
+import { clearClientPortalSession, hashClientPassword, setClientPortalSession, verifyClientPassword } from "./clientPortalAuth";
 
 const publicOrigin = (req: { headers?: Record<string, string | string[] | undefined> }) => {
   const origin = req.headers?.origin;
@@ -23,7 +24,7 @@ const publicOrigin = (req: { headers?: Record<string, string | string[] | undefi
 
 async function deliverInvitation(input: { invitation: { id: number; email: string; token: string; expiresAt: Date }; organisationName: string; origin: string; resend: boolean }) {
   try {
-    const emailId = await sendPortalInvitationEmail({ to: input.invitation.email, organisationName: input.organisationName, portalUrl: `${input.origin}/portal?invite=${input.invitation.token}`, expiresAt: input.invitation.expiresAt, resend: input.resend });
+    const emailId = await sendPortalInvitationEmail({ to: input.invitation.email, organisationName: input.organisationName, portalUrl: `${input.origin}/login?invite=${input.invitation.token}`, expiresAt: input.invitation.expiresAt, resend: input.resend });
     await recordPortalInvitationEmail(input.invitation.id, emailId, input.resend);
     return { delivered: true } as const;
   } catch (error) {
@@ -114,6 +115,11 @@ const csvCell = (value: string | number | null | undefined) => {
   const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
   return `"${safe.replaceAll('"', '""')}"`;
 };
+const clientPasswordSchema = z.string().min(12, "Use at least 12 characters").max(128, "Password is too long").refine((value) => /[A-Za-z]/.test(value) && /\d/.test(value), "Include at least one letter and one number");
+const maskClientEmail = (email: string) => {
+  const [local, domain] = email.split("@");
+  return `${local.slice(0, 2)}${"•".repeat(Math.max(2, local.length - 2))}@${domain}`;
+};
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -126,6 +132,46 @@ export const appRouter = router({
       return {
         success: true,
       } as const;
+    }),
+  }),
+  clientAuth: router({
+    invitation: publicProcedure.input(z.object({ token: z.string().min(20).max(128) })).query(async ({ input }) => {
+      const invitation = await getClientAccountActivationInvitation(input.token);
+      return { email: maskClientEmail(invitation.email), organisationId: invitation.organisationId, brand: invitation.brand, role: invitation.role };
+    }),
+    activate: publicProcedure.input(z.object({ token: z.string().min(20).max(128), password: clientPasswordSchema })).mutation(async ({ ctx, input }) => {
+      const account = await activateClientPortalAccount({ token: input.token, passwordHash: await hashClientPassword(input.password) });
+      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email });
+      return { success: true, brand: account.brand } as const;
+    }),
+    login: publicProcedure.input(z.object({ email: z.string().trim().email().max(320), password: z.string().min(1).max(128) })).mutation(async ({ ctx, input }) => {
+      const account = await getClientPortalAccountByEmail(input.email);
+      if (!account || !(await verifyClientPassword(input.password, account.passwordHash))) throw new TRPCError({ code: "UNAUTHORIZED", message: "Email or password is not recognised" });
+      await recordClientPortalSignIn(account.id);
+      await setClientPortalSession(ctx.res, ctx.req, { accountId: account.id, organisationId: account.organisationId, brand: account.brand, role: account.role, email: account.email });
+      return { success: true, brand: account.brand } as const;
+    }),
+    me: publicProcedure.query(async ({ ctx }) => {
+      if (!ctx.clientSession) return null;
+      const account = await getClientPortalAccountById(ctx.clientSession.accountId);
+      if (!account || account.organisationId !== ctx.clientSession.organisationId || account.brand !== ctx.clientSession.brand || account.email !== ctx.clientSession.email) return null;
+      return { email: account.email, role: account.role, organisationId: account.organisationId, brand: account.brand };
+    }),
+    logout: publicProcedure.mutation(({ ctx }) => { clearClientPortalSession(ctx.res, ctx.req); return { success: true } as const; }),
+  }),
+  clientPortal: router({
+    collections: clientPortalProcedure.query(({ ctx }) => listClientPortalCollections(ctx.clientSession.organisationId, ctx.clientSession.brand)),
+    attachments: clientPortalProcedure.query(({ ctx }) => listClientPortalAttachments(ctx.clientSession.organisationId, ctx.clientSession.brand)),
+    auditEvents: clientPortalProcedure.input(z.object({ page: z.number().int().positive().default(1), pageSize: z.number().int().min(1).max(50).default(10) })).query(({ ctx, input }) => listClientPortalAuditEvents(ctx.clientSession.organisationId, ctx.clientSession.brand, input.page, input.pageSize)),
+    coreEvidence: clientPortalProcedure.query(({ ctx }) => listClientPortalCoreEvidence(ctx.clientSession.organisationId, ctx.clientSession.brand)),
+    downloadAttachment: clientPortalProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const attachment = await getClientPortalAttachment(ctx.clientSession.organisationId, ctx.clientSession.brand, input.attachmentId);
+      return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
+    }),
+    downloadCoreEvidence: clientPortalProcedure.input(z.object({ evidenceId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const evidence = await getClientPortalCoreEvidence(ctx.clientSession.organisationId, ctx.clientSession.brand, input.evidenceId);
+      if (!evidence.storageKey || !evidence.fileName) throw new TRPCError({ code: "NOT_FOUND", message: "This evidence file is not available through your client account" });
+      return { url: await storageGetSignedUrl(evidence.storageKey), fileName: evidence.fileName };
     }),
   }),
   assessment: router({
@@ -310,7 +356,7 @@ export const appRouter = router({
       const invitations = await listActivePortalInvitations(route.organisation.id, input.brand);
       const origin = publicOrigin(ctx.req);
       const statusLabel = input.status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-      const deliveries = await Promise.allSettled(invitations.map((invitation) => sendCollectionStatusEmail({ to: invitation.email, organisationName: route.organisation.name, collectionReference: route.collection.reference, collectionTitle: route.collection.title, statusLabel, portalUrl: `${origin}/portal?invite=${invitation.token}` })));
+      const deliveries = await Promise.allSettled(invitations.map((invitation) => sendCollectionStatusEmail({ to: invitation.email, organisationName: route.organisation.name, collectionReference: route.collection.reference, collectionTitle: route.collection.title, statusLabel, portalUrl: invitation.status === "pending" ? `${origin}/login?invite=${invitation.token}` : `${origin}/login` })));
       return { success: true, statusEmailsSent: deliveries.filter((result) => result.status === "fulfilled").length } as const;
     }),
     createInvitation: adminProcedure.input(z.object({
@@ -389,18 +435,6 @@ export const appRouter = router({
       const collectionIds = await listCollectionIdsForOrganisation(input.organisationId);
       await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: "Customer portal viewer access granted", customerVisible: false, actorUserId: ctx.user.id })));
       return { success: true } as const;
-    }),
-  }),
-  magicPortal: router({
-    overview: publicProcedure.input(z.object({ token: z.string().min(20).max(128) })).query(({ input }) => getMagicPortalOverview(input.token)),
-    downloadAttachment: publicProcedure.input(z.object({ token: z.string().min(20).max(128), attachmentId: z.number().int().positive() })).mutation(async ({ input }) => {
-      const attachment = await getMagicPortalAttachment(input.token, input.attachmentId);
-      return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };
-    }),
-    downloadCoreEvidence: publicProcedure.input(z.object({ token: z.string().min(20).max(128), evidenceId: z.number().int().positive() })).mutation(async ({ input }) => {
-      const evidence = await getMagicPortalCoreEvidence(input.token, input.evidenceId);
-      if (!evidence.storageKey || !evidence.fileName) throw new TRPCError({ code: "NOT_FOUND", message: "This Core evidence file is not available through the invitation link" });
-      return { url: await storageGetSignedUrl(evidence.storageKey), fileName: evidence.fileName };
     }),
   }),
 });

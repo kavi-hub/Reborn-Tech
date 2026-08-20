@@ -21,18 +21,17 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Boxes, ClipboardList, LayoutDashboard, LogOut, PanelLeft, Truck } from "lucide-react";
+import { operationsNavigation } from "@/lib/operationsNavigation";
+import { Boxes, ClipboardList, LogOut, PanelLeft, Truck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Operations overview", path: "/operations" },
-  { icon: ClipboardList, label: "Assessment enquiries", path: "/operations" },
-  { icon: Truck, label: "Collection tracking", path: "/operations/collections" },
-  { icon: Boxes, label: "Bulk GSM ITAD Dash", path: "/bulk/itad-dash" },
-];
+const menuItems = operationsNavigation.map((item) => ({
+  ...item,
+  icon: item.id === "assessment-enquiries" ? ClipboardList : item.id === "collection-tracking" ? Truck : Boxes,
+}));
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -67,16 +66,10 @@ export default function DashboardLayout({
               Sign in to continue
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+              Access to Operations is restricted to authorised staff. Sign in from the shared access page.
             </p>
           </div>
-          <Button
-            onClick={() => startLogin()}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
+          <Button asChild size="lg" className="w-full shadow-lg hover:shadow-xl transition-all"><a href="/login?access=team">Go to access page</a></Button>
         </div>
       </div>
     );

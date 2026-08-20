@@ -1,11 +1,13 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import { readClientPortalSession, type ClientPortalSession } from "../clientPortalAuth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  clientSession: ClientPortalSession | null;
 };
 
 export async function createContext(
@@ -20,9 +22,11 @@ export async function createContext(
     user = null;
   }
 
+  const clientSession = await readClientPortalSession(opts.req);
   return {
     req: opts.req,
     res: opts.res,
     user,
+    clientSession,
   };
 }

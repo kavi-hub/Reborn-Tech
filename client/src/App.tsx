@@ -6,7 +6,8 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import CustomerPortal from "./pages/CustomerPortal";
+import ClientDashboard from "./pages/ClientDashboard";
+import AccessLogin from "./pages/AccessLogin";
 import CollectionsManager from "./pages/CollectionsManager";
 import BulkItadDash from "./pages/BulkItadDash";
 import OperationsDashboard from "./pages/OperationsDashboard";
@@ -20,7 +21,8 @@ function Router() {
       <Route path="/operations" component={OperationsDashboard} />
       <Route path="/operations/collections" component={CollectionsManager} />
       <Route path="/bulk/itad-dash" component={BulkItadDash} />
-      <Route path="/portal" component={CustomerPortal} />
+      <Route path="/login" component={AccessLogin} />
+      <Route path="/portal" component={ClientDashboard} />
       <Route path="/services" component={ServicesPage} />
       <Route path="/security" component={SecurityPage} />
       <Route path="/impact" component={ImpactPage} />

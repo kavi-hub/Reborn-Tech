@@ -57,6 +57,21 @@ const mocks = vi.hoisted(() => ({
   sendPortalInvitationEmail: vi.fn(),
   sendCollectionStatusEmail: vi.fn(),
   sendExceptionLifecycleEmail: vi.fn(),
+  getClientAccountActivationInvitation: vi.fn(),
+  activateClientPortalAccount: vi.fn(),
+  getClientPortalAccountByEmail: vi.fn(),
+  getClientPortalAccountById: vi.fn(),
+  recordClientPortalSignIn: vi.fn(),
+  listClientPortalCollections: vi.fn(),
+  listClientPortalAttachments: vi.fn(),
+  listClientPortalAuditEvents: vi.fn(),
+  listClientPortalCoreEvidence: vi.fn(),
+  getClientPortalAttachment: vi.fn(),
+  getClientPortalCoreEvidence: vi.fn(),
+  hashClientPassword: vi.fn(),
+  verifyClientPassword: vi.fn(),
+  setClientPortalSession: vi.fn(),
+  clearClientPortalSession: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
@@ -110,6 +125,17 @@ vi.mock("./db", () => ({
   listCustomerCollectionAuditEvents: mocks.listCustomerCollectionAuditEvents,
   listSecurazeImportExceptions: mocks.listSecurazeImportExceptions,
   findOperationsAdminByEmail: mocks.findOperationsAdminByEmail,
+  getClientAccountActivationInvitation: mocks.getClientAccountActivationInvitation,
+  activateClientPortalAccount: mocks.activateClientPortalAccount,
+  getClientPortalAccountByEmail: mocks.getClientPortalAccountByEmail,
+  getClientPortalAccountById: mocks.getClientPortalAccountById,
+  recordClientPortalSignIn: mocks.recordClientPortalSignIn,
+  listClientPortalCollections: mocks.listClientPortalCollections,
+  listClientPortalAttachments: mocks.listClientPortalAttachments,
+  listClientPortalAuditEvents: mocks.listClientPortalAuditEvents,
+  listClientPortalCoreEvidence: mocks.listClientPortalCoreEvidence,
+  getClientPortalAttachment: mocks.getClientPortalAttachment,
+  getClientPortalCoreEvidence: mocks.getClientPortalCoreEvidence,
 }));
 
 vi.mock("./_core/notification", () => ({
@@ -125,6 +151,13 @@ vi.mock("./rebornEmail", () => ({
 vi.mock("./storage", () => ({
   storagePut: mocks.storagePut,
   storageGetSignedUrl: mocks.storageGetSignedUrl,
+}));
+
+vi.mock("./clientPortalAuth", () => ({
+  hashClientPassword: mocks.hashClientPassword,
+  verifyClientPassword: mocks.verifyClientPassword,
+  setClientPortalSession: mocks.setClientPortalSession,
+  clearClientPortalSession: mocks.clearClientPortalSession,
 }));
 
 import { assessmentInputSchema, appRouter } from "./routers";
@@ -382,50 +415,28 @@ describe("assessment input validation", () => {
     expect(mocks.claimCustomerPortalInvitation).toHaveBeenCalledWith({ token: "z".repeat(24), userId: 82, email: "client@example.com" });
   });
 
-  it("opens only token-scoped customer portal data without requiring a user session", async () => {
-    mocks.getMagicPortalOverview.mockResolvedValue({ organisation: { id: 4, name: "Northwind Services" }, collections: [], attachments: [], events: [] });
-    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
-
-    await expect(publicCaller.magicPortal.overview({ token: "p".repeat(24) })).resolves.toMatchObject({ organisation: { id: 4 } });
-    expect(mocks.getMagicPortalOverview).toHaveBeenCalledWith("p".repeat(24));
+  it("exposes only masked invitation activation metadata before a password client session exists", async () => {
+    mocks.getClientAccountActivationInvitation.mockResolvedValue({ id: 9, email: "client@example.com", organisationId: 4, brand: "reborn", role: "viewer", expiresAt: new Date("2026-09-01") });
+    const publicCaller = appRouter.createCaller({ user: null, clientSession: null, req: {}, res: {} } as TrpcContext);
+    await expect(publicCaller.clientAuth.invitation({ token: "p".repeat(24) })).resolves.toEqual({ email: "cl••••@example.com", organisationId: 4, brand: "reborn", role: "viewer" });
+    await expect(publicCaller.clientPortal.collections()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(appRouter._def.procedures["magicPortal.overview"]).toBeUndefined();
   });
 
-  it("uses the direct-link token as the only portal scope, preventing a caller from selecting another brand", async () => {
-    const rebornToken = "r".repeat(24);
-    const bulkToken = "b".repeat(24);
-    mocks.getMagicPortalOverview.mockImplementation(async (token) => token === rebornToken
-      ? { organisation: { id: 4, name: "Reborn customer" }, collections: [{ brand: "reborn" }], attachments: [], events: [] }
-      : { organisation: { id: 8, name: "Bulk GSM customer" }, collections: [{ brand: "bulk_gsm" }], attachments: [], events: [] });
-    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
-
-    await expect(publicCaller.magicPortal.overview({ token: rebornToken })).resolves.toMatchObject({ collections: [{ brand: "reborn" }] });
-    await expect(publicCaller.magicPortal.overview({ token: bulkToken })).resolves.toMatchObject({ collections: [{ brand: "bulk_gsm" }] });
-
-    expect(mocks.getMagicPortalOverview).toHaveBeenNthCalledWith(1, rebornToken);
-    expect(mocks.getMagicPortalOverview).toHaveBeenNthCalledWith(2, bulkToken);
+  it("rejects invalid and expired client activation invitations", async () => {
+    const publicCaller = appRouter.createCaller({ user: null, clientSession: null, req: {}, res: {} } as TrpcContext);
+    mocks.getClientAccountActivationInvitation.mockRejectedValueOnce(new Error("This client access invitation is not recognised"));
+    await expect(publicCaller.clientAuth.invitation({ token: "i".repeat(24) })).rejects.toThrow("not recognised");
+    mocks.getClientAccountActivationInvitation.mockRejectedValueOnce(new Error("This client access invitation has expired"));
+    await expect(publicCaller.clientAuth.invitation({ token: "e".repeat(24) })).rejects.toThrow("expired");
   });
 
-  it("rejects invalid and expired direct invitation tokens", async () => {
-    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
-    mocks.getMagicPortalOverview.mockRejectedValueOnce(new Error("This invitation is not recognised"));
-    await expect(publicCaller.magicPortal.overview({ token: "i".repeat(24) })).rejects.toThrow("not recognised");
-    mocks.getMagicPortalOverview.mockRejectedValueOnce(new Error("This invitation has expired"));
-    await expect(publicCaller.magicPortal.overview({ token: "e".repeat(24) })).rejects.toThrow("expired");
-  });
-
-  it("rejects a magic-link file request outside its customer-visible organisation scope", async () => {
-    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
-    mocks.getMagicPortalAttachment.mockRejectedValueOnce(new Error("This file is not available through the invitation link"));
-    await expect(publicCaller.magicPortal.downloadAttachment({ token: "f".repeat(24), attachmentId: 91 })).rejects.toThrow("not available");
-  });
-
-  it("releases a customer-visible document from the invited organisation through a signed URL", async () => {
-    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
-    mocks.getMagicPortalAttachment.mockResolvedValueOnce({ storageKey: "collection-routes/4/inventory.pdf", fileName: "inventory.pdf" });
+  it("releases a customer-visible document only through the signed client organisation scope", async () => {
+    const clientCaller = appRouter.createCaller({ user: null, clientSession: { accountId: 12, organisationId: 4, brand: "reborn", role: "viewer", email: "client@example.com" }, req: {}, res: {} } as TrpcContext);
+    mocks.getClientPortalAttachment.mockResolvedValueOnce({ storageKey: "collection-routes/4/inventory.pdf", fileName: "inventory.pdf" });
     mocks.storageGetSignedUrl.mockResolvedValueOnce("https://files.example.com/signed-inventory");
-
-    await expect(publicCaller.magicPortal.downloadAttachment({ token: "a".repeat(24), attachmentId: 8 })).resolves.toEqual({ url: "https://files.example.com/signed-inventory", fileName: "inventory.pdf" });
-    expect(mocks.getMagicPortalAttachment).toHaveBeenCalledWith("a".repeat(24), 8);
+    await expect(clientCaller.clientPortal.downloadAttachment({ attachmentId: 8 })).resolves.toEqual({ url: "https://files.example.com/signed-inventory", fileName: "inventory.pdf" });
+    expect(mocks.getClientPortalAttachment).toHaveBeenCalledWith(4, "reborn", 8);
   });
 
   it("maps a Securaze CSV through explicit headers while holding invalid and duplicate rows as review exceptions", () => {
@@ -491,16 +502,16 @@ describe("assessment input validation", () => {
     expect(mocks.updateItadJobException).toHaveBeenCalledWith({ exceptionId: 8, jobId: 44, brand: "reborn", status: "in_progress", takeOwnership: true, actorUserId: 7 });
   });
 
-  it("releases only approved Core evidence through the invitation token scope", async () => {
-    const publicCaller = appRouter.createCaller({ user: null, req: {}, res: {} } as TrpcContext);
-    mocks.getMagicPortalCoreEvidence.mockResolvedValueOnce({ id: 22, storageKey: "itad-core/jobs/44/evidence/approved.pdf", fileName: "approved.pdf" });
+  it("releases only approved Core evidence through the signed client session scope", async () => {
+    const clientCaller = appRouter.createCaller({ user: null, clientSession: { accountId: 12, organisationId: 4, brand: "reborn", role: "viewer", email: "client@example.com" }, req: {}, res: {} } as TrpcContext);
+    mocks.getClientPortalCoreEvidence.mockResolvedValueOnce({ id: 22, storageKey: "itad-core/jobs/44/evidence/approved.pdf", fileName: "approved.pdf" });
     mocks.storageGetSignedUrl.mockResolvedValueOnce("https://files.example.com/approved-core-evidence");
 
-    await expect(publicCaller.magicPortal.downloadCoreEvidence({ token: "c".repeat(24), evidenceId: 22 })).resolves.toEqual({ url: "https://files.example.com/approved-core-evidence", fileName: "approved.pdf" });
-    expect(mocks.getMagicPortalCoreEvidence).toHaveBeenCalledWith("c".repeat(24), 22);
+    await expect(clientCaller.clientPortal.downloadCoreEvidence({ evidenceId: 22 })).resolves.toEqual({ url: "https://files.example.com/approved-core-evidence", fileName: "approved.pdf" });
+    expect(mocks.getClientPortalCoreEvidence).toHaveBeenCalledWith(4, "reborn", 22);
 
-    mocks.getMagicPortalCoreEvidence.mockRejectedValueOnce(new Error("This Core evidence file is not available through the invitation link"));
-    await expect(publicCaller.magicPortal.downloadCoreEvidence({ token: "c".repeat(24), evidenceId: 99 })).rejects.toThrow("not available");
+    mocks.getClientPortalCoreEvidence.mockRejectedValueOnce(new Error("This Core evidence file is not available through your client account"));
+    await expect(clientCaller.clientPortal.downloadCoreEvidence({ evidenceId: 99 })).rejects.toThrow("not available");
   });
 
   it("fails closed when an advanced Core action targets a Job from another brand partition", async () => {
@@ -599,5 +610,41 @@ describe("assessment input validation", () => {
     await expect(admin.itadCore.createException({ jobId: 44, brand: "reborn", title: "Bad deadline", dueAt: "not-a-date" as unknown as Date })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(member.itadCore.operationsAdmins()).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(mocks.listOperationsAdmins).not.toHaveBeenCalled();
+  });
+
+  it("activates an invited client password account and scopes the resulting session to its organisation and brand", async () => {
+    mocks.getClientAccountActivationInvitation.mockResolvedValue({ id: 91, email: "client@example.com", organisationId: 55, brand: "reborn", role: "viewer", expiresAt: new Date("2026-09-01") });
+    mocks.hashClientPassword.mockResolvedValue("scrypt$hash");
+    mocks.activateClientPortalAccount.mockResolvedValue({ id: 44, email: "client@example.com", organisationId: 55, brand: "reborn", role: "viewer" });
+    const caller = appRouter.createCaller({ user: null, clientSession: null, req: {}, res: {} } as TrpcContext);
+
+    await expect(caller.clientAuth.invitation({ token: "a".repeat(24) })).resolves.toMatchObject({ email: "cl••••@example.com", brand: "reborn" });
+    await expect(caller.clientAuth.activate({ token: "a".repeat(24), password: "Password12345" })).resolves.toEqual({ success: true, brand: "reborn" });
+    expect(mocks.activateClientPortalAccount).toHaveBeenCalledWith({ token: "a".repeat(24), passwordHash: "scrypt$hash" });
+    expect(mocks.setClientPortalSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com" });
+  });
+
+  it("rejects invalid client credentials and denies client dashboard reads without a client session", async () => {
+    mocks.getClientPortalAccountByEmail.mockResolvedValue(null);
+    const anonymous = appRouter.createCaller({ user: null, clientSession: null, req: {}, res: {} } as TrpcContext);
+    await expect(anonymous.clientAuth.login({ email: "nobody@example.com", password: "Password12345" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(anonymous.clientPortal.collections()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(appRouter._def.procedures["magicPortal.overview"]).toBeUndefined();
+  });
+
+  it("reads client dashboard data only from the signed client organisation and brand", async () => {
+    mocks.listClientPortalCollections.mockResolvedValue([]);
+    mocks.listClientPortalAttachments.mockResolvedValue([]);
+    mocks.listClientPortalAuditEvents.mockResolvedValue({ events: [], total: 0 });
+    mocks.listClientPortalCoreEvidence.mockResolvedValue([]);
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "bulk_gsm", role: "viewer", email: "client@example.com" }, req: {}, res: {} } as TrpcContext);
+    await client.clientPortal.collections();
+    await client.clientPortal.attachments();
+    await client.clientPortal.auditEvents({ page: 2, pageSize: 6 });
+    await client.clientPortal.coreEvidence();
+    expect(mocks.listClientPortalCollections).toHaveBeenCalledWith(55, "bulk_gsm");
+    expect(mocks.listClientPortalAttachments).toHaveBeenCalledWith(55, "bulk_gsm");
+    expect(mocks.listClientPortalAuditEvents).toHaveBeenCalledWith(55, "bulk_gsm", 2, 6);
+    expect(mocks.listClientPortalCoreEvidence).toHaveBeenCalledWith(55, "bulk_gsm");
   });
 });
