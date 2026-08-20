@@ -160,3 +160,11 @@
 - [x] Add branded email notifications when an exception is assigned or resolved, using registered operations-admin email addresses only.
 - [x] Add tests for preview-confirm integrity, brand-scoped exception export, filtered exception queries and notification success/failure paths.
 - [x] Add focused automated coverage for Core Job exception filtering and deterministic sort orders.
+
+## ITAD Core milestone 5 — bulk operations and KPI visibility
+
+- [x] Add brand-scoped bulk reassignment for selected unresolved Core Job exceptions, with a single registered-admin recipient and audit trail per record.
+- [x] Add a downloadable Securaze CSV template that states the accepted headers and includes a safe example row.
+- [x] Add brand-scoped Core Job exception KPIs for unresolved count, age thresholds and oldest unresolved item.
+- [x] Present KPI cards and a concise bulk reassignment control in both Reborn and Bulk GSM Core Job workspaces.
+- [x] Add tests for bulk reassignment boundaries, template headers and KPI calculation edge cases.

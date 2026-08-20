@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createAssessmentRequest: vi.fn(),
+  bulkReassignItadJobExceptions: vi.fn(),
   listAssessmentRequests: vi.fn(),
   updateAssessmentStatus: vi.fn(),
   deleteAssessmentRequest: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   createSecurazeImportExceptions: vi.fn(),
   approveItadJobEvidence: vi.fn(),
   getItadJobDetail: vi.fn(),
+  getItadJobExceptionKpis: vi.fn(),
   getItadJobEvidenceFile: vi.fn(),
   getMagicPortalCoreEvidence: vi.fn(),
   listAdminCollections: vi.fn(),
@@ -58,6 +60,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./db", () => ({
   createAssessmentRequest: mocks.createAssessmentRequest,
+  bulkReassignItadJobExceptions: mocks.bulkReassignItadJobExceptions,
   listAssessmentRequests: mocks.listAssessmentRequests,
   updateAssessmentStatus: mocks.updateAssessmentStatus,
   deleteAssessmentRequest: mocks.deleteAssessmentRequest,
@@ -90,6 +93,7 @@ vi.mock("./db", () => ({
   getCustomerOrganisationMembership: mocks.getCustomerOrganisationMembership,
   getOperationsUserById: mocks.getOperationsUserById,
   getItadJobDetail: mocks.getItadJobDetail,
+  getItadJobExceptionKpis: mocks.getItadJobExceptionKpis,
   getItadJobEvidenceFile: mocks.getItadJobEvidenceFile,
   updateItadJobException: mocks.updateItadJobException,
   createCollectionAttachment: mocks.createCollectionAttachment,
@@ -545,5 +549,30 @@ describe("assessment input validation", () => {
 
     mocks.sendExceptionLifecycleEmail.mockRejectedValueOnce(new Error("Resend unavailable"));
     await expect(admin.itadCore.updateException({ exceptionId: 8, jobId: 44, brand: "reborn", status: "resolved", takeOwnership: false })).resolves.toMatchObject({ success: true, emailDelivered: false });
+  });
+
+  it("returns the accepted Securaze template and brand-scoped exception KPI summary", async () => {
+    mocks.getItadJobExceptionKpis.mockResolvedValue({ unresolvedCount: 4, ageingOver24Hours: 2, ageingOver72Hours: 1, oldestUnresolved: { id: 9, title: "Awaiting serial", ageHours: 80, createdAt: new Date() } });
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.exceptionKpis({ jobId: 44, brand: "bulk_gsm" })).resolves.toMatchObject({ unresolvedCount: 4, ageingOver72Hours: 1 });
+    expect(mocks.getItadJobExceptionKpis).toHaveBeenCalledWith(44, "bulk_gsm");
+    const template = await admin.itadCore.securazeTemplate();
+    expect(template.acceptedHeaders).toEqual(expect.arrayContaining(["Serial Number", "Result", "Device Type"]));
+    expect(template.csv).toContain("EXAMPLE-123,Completed,Laptop");
+  });
+
+  it("bulk reassigns only selected brand-scoped exceptions to one registered operations admin", async () => {
+    mocks.findOperationsAdminByEmail.mockResolvedValue({ id: 14, name: "Andi", email: "andi@example.com" });
+    mocks.bulkReassignItadJobExceptions.mockResolvedValue({ job: { jobReference: "BG-44" }, records: [{ id: 3 }, { id: 8 }] });
+    mocks.sendExceptionLifecycleEmail.mockResolvedValue("email_bulk");
+    const admin = appRouter.createCaller({ user: { id: 7, name: "Kavi", role: "admin" }, req: { headers: { host: "reborntech.manus.space" } }, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.bulkReassignExceptions({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3, 8, 3], assigneeEmail: "andi@example.com" })).resolves.toMatchObject({ success: true, reassignedCount: 2, emailDelivered: true });
+    expect(mocks.bulkReassignItadJobExceptions).toHaveBeenCalledWith({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3, 8], ownerUserId: 14, actorUserId: 7 });
+    expect(mocks.sendExceptionLifecycleEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "andi@example.com", jobReference: "BG-44", event: "assigned" }));
+
+    mocks.findOperationsAdminByEmail.mockResolvedValueOnce(null);
+    await expect(admin.itadCore.bulkReassignExceptions({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3], assigneeEmail: "unknown@example.com" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });
