@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   getPortalInvitation: vi.fn(),
   listActivePortalInvitations: vi.fn(),
   listOrganisationPortalInvitations: vi.fn(),
+  listOperationsAdmins: vi.fn(),
   recordPortalInvitationEmail: vi.fn(),
   recordPortalInvitationEmailFailure: vi.fn(),
   revokePortalInvitation: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock("./db", () => ({
   getPortalInvitation: mocks.getPortalInvitation,
   listActivePortalInvitations: mocks.listActivePortalInvitations,
   listOrganisationPortalInvitations: mocks.listOrganisationPortalInvitations,
+  listOperationsAdmins: mocks.listOperationsAdmins,
   recordPortalInvitationEmail: mocks.recordPortalInvitationEmail,
   recordPortalInvitationEmailFailure: mocks.recordPortalInvitationEmailFailure,
   revokePortalInvitation: mocks.revokePortalInvitation,
@@ -563,16 +565,39 @@ describe("assessment input validation", () => {
   });
 
   it("bulk reassigns only selected brand-scoped exceptions to one registered operations admin", async () => {
-    mocks.findOperationsAdminByEmail.mockResolvedValue({ id: 14, name: "Andi", email: "andi@example.com" });
+    mocks.getOperationsUserById.mockResolvedValue({ id: 14, name: "Andi", email: "andi@example.com" });
     mocks.bulkReassignItadJobExceptions.mockResolvedValue({ job: { jobReference: "BG-44" }, records: [{ id: 3 }, { id: 8 }] });
     mocks.sendExceptionLifecycleEmail.mockResolvedValue("email_bulk");
     const admin = appRouter.createCaller({ user: { id: 7, name: "Kavi", role: "admin" }, req: { headers: { host: "reborntech.manus.space" } }, res: {} } as TrpcContext);
 
-    await expect(admin.itadCore.bulkReassignExceptions({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3, 8, 3], assigneeEmail: "andi@example.com" })).resolves.toMatchObject({ success: true, reassignedCount: 2, emailDelivered: true });
+    await expect(admin.itadCore.bulkReassignExceptions({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3, 8, 3], assigneeUserId: 14 })).resolves.toMatchObject({ success: true, reassignedCount: 2, emailDelivered: true });
     expect(mocks.bulkReassignItadJobExceptions).toHaveBeenCalledWith({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3, 8], ownerUserId: 14, actorUserId: 7 });
     expect(mocks.sendExceptionLifecycleEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "andi@example.com", jobReference: "BG-44", event: "assigned" }));
 
-    mocks.findOperationsAdminByEmail.mockResolvedValueOnce(null);
-    await expect(admin.itadCore.bulkReassignExceptions({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3], assigneeEmail: "unknown@example.com" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    mocks.getOperationsUserById.mockResolvedValueOnce(null);
+    await expect(admin.itadCore.bulkReassignExceptions({ jobId: 44, brand: "bulk_gsm", exceptionIds: [3], assigneeUserId: 999 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("lists registered operations admins and persists optional due dates through exception lifecycle actions", async () => {
+    mocks.listOperationsAdmins.mockResolvedValue([{ id: 7, name: "Kavi", email: "kavi@example.com" }, { id: 14, name: "Andi", email: "andi@example.com" }]);
+    mocks.createItadJobException.mockResolvedValue({ job: { jobReference: "RB-44" }, title: "Manifest check", ownerUserId: 7 });
+    mocks.updateItadJobException.mockResolvedValue({ job: { jobReference: "RB-44" }, exception: { title: "Manifest check", ownerUserId: 7 }, ownerUserId: 7 });
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    const dueAt = new Date("2026-09-01T23:59:59.999Z");
+
+    await expect(admin.itadCore.operationsAdmins()).resolves.toHaveLength(2);
+    await admin.itadCore.createException({ jobId: 44, brand: "reborn", title: "Manifest check", dueAt });
+    await admin.itadCore.updateException({ exceptionId: 8, jobId: 44, brand: "reborn", status: "in_progress", takeOwnership: false, dueAt: null });
+    expect(mocks.createItadJobException).toHaveBeenCalledWith(expect.objectContaining({ jobId: 44, brand: "reborn", dueAt }));
+    expect(mocks.updateItadJobException).toHaveBeenCalledWith(expect.objectContaining({ exceptionId: 8, jobId: 44, brand: "reborn", dueAt: null, actorUserId: 7 }));
+  });
+
+  it("rejects malformed due dates and prevents non-admin callers from reading the admin directory", async () => {
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    const member = appRouter.createCaller({ user: { id: 9, role: "user" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.createException({ jobId: 44, brand: "reborn", title: "Bad deadline", dueAt: "not-a-date" as unknown as Date })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(member.itadCore.operationsAdmins()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(mocks.listOperationsAdmins).not.toHaveBeenCalled();
   });
 });

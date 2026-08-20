@@ -6,8 +6,10 @@
 .core-job-records-head > div > p:not(.ops-kicker) { max-width: 650px; margin: 12px 0 0; color: #d0d8cf; font-size: 13px; line-height: 1.55; }
 .core-job-counts { display: flex; align-items: flex-end; flex-wrap: wrap; justify-content: flex-end; gap: 10px; min-width: 260px; }
 .core-job-counts span { display: inline-flex; align-items: center; gap: 6px; color: var(--lime); font: 500 9px "IBM Plex Mono", monospace; letter-spacing: .06em; text-transform: uppercase; }
-.core-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #d5dfa9; }
-.core-kpi-grid article { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; min-width: 0; padding: 17px 20px; border-right: 1px solid var(--line); }
+.core-kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #d5dfa9; }
+.core-kpi-grid button { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; min-width: 0; padding: 17px 16px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; text-align: left; transition: background .16s var(--ease-out, ease-out), color .16s var(--ease-out, ease-out); }
+.core-kpi-grid button:hover, .core-kpi-grid button:focus-visible, .core-kpi-grid .core-kpi-active { background: var(--ink); color: var(--paper-light); outline: 0; }
+.core-kpi-grid .core-kpi-active span, .core-kpi-grid button:hover span, .core-kpi-grid button:focus-visible span, .core-kpi-grid .core-kpi-active small, .core-kpi-grid button:hover small, .core-kpi-grid button:focus-visible small { color: var(--lime); }
 .core-kpi-grid svg { grid-row: span 2; margin-top: 2px; color: var(--mineral); }
 .core-kpi-grid span { color: #4e5a4b; font: 700 8px "IBM Plex Mono", monospace; letter-spacing: .07em; text-transform: uppercase; }
 .core-kpi-grid strong { font-size: 24px; line-height: 1; letter-spacing: -.06em; }
@@ -48,10 +50,16 @@
 .core-bulk-reassign svg { grid-row: span 2; color: var(--mineral); }
 .core-bulk-reassign strong { font-size: 12px; }
 .core-bulk-reassign span { color: #596259; font-size: 10px; }
-.core-bulk-reassign input { min-width: 0; min-height: 37px; border: 1px solid var(--line); background: #fffdf6; padding: 7px 8px; font: 500 11px "Space Grotesk", sans-serif; }
+.core-bulk-reassign input, .core-bulk-reassign select { min-width: 0; min-height: 37px; border: 1px solid var(--line); background: #fffdf6; padding: 7px 8px; font: 500 11px "Space Grotesk", sans-serif; }
 .core-exception-row { grid-template-columns: 17px 1fr !important; align-items: start; }
 .core-exception-row > input { width: 14px; height: 14px; margin-top: 2px; accent-color: var(--mineral); }
 .core-exception-row > input:disabled { opacity: .35; }
+.core-due-control { display: flex; align-items: end; gap: 8px; margin-top: 9px; }
+.core-due-control label { display: grid; gap: 4px; color: #566157; font: 700 9px "IBM Plex Mono", monospace; letter-spacing: .03em; }
+.core-due-control input { min-height: 31px; border: 1px solid var(--line); background: #fffdf6; padding: 4px 6px; color: var(--ink); font: 500 11px "Space Grotesk", sans-serif; }
+.core-due-control button { min-height: 31px; border: 1px solid var(--line); background: transparent; color: var(--mineral); padding: 4px 7px; font: 700 9px "IBM Plex Mono", monospace; cursor: pointer; }
+.core-row-list small b { font: inherit; text-transform: uppercase; }
+.core-sla-overdue { color: #8c3026; }.core-sla-due_soon { color: #71500d; }.core-sla-on_track { color: var(--mineral); }.core-sla-unscheduled { color: #667067; }.core-sla-resolved { color: var(--mineral); }
 .core-job-accountability { display: grid; grid-template-columns: 1fr 1fr; border-left: 1px solid var(--line); }
 .core-job-accountability textarea, .core-form-grid textarea { width: 100%; border: 1px solid var(--line); background: #fffdf6; color: var(--ink); padding: 8px; font: 500 12px/1.45 "Space Grotesk", sans-serif; resize: vertical; }
 .core-exception-pane { background: #f5e8d9; }
@@ -64,5 +72,5 @@
 .core-activity-list span, .core-activity-list time, .core-activity-empty { color: #596259; font: 500 9px/1.35 "IBM Plex Mono", monospace; }
 .core-activity-list time { text-align: right; }
 .core-activity-empty { margin: 18px 0 0; }
-@media (max-width: 1150px) { .core-kpi-grid { grid-template-columns: 1fr 1fr; }.core-job-ledger { grid-template-columns: 1fr 1fr; }.core-import-pane { grid-column: 1 / -1; } }
-@media (max-width: 720px) { .core-job-records-head { align-items: flex-start; flex-direction: column; }.core-job-counts { align-items: flex-start; justify-content: flex-start; min-width: 0; }.core-kpi-grid, .core-job-ledger, .core-job-accountability { grid-template-columns: 1fr; }.core-kpi-grid article { border-bottom: 1px solid var(--line); }.core-import-pane { grid-column: auto; }.core-form-grid { grid-template-columns: 1fr; }.core-wide { grid-column: auto; }.core-import-actions .button { flex: 1 1 160px; }.core-exception-controls { display: grid; }.core-exception-controls label { justify-content: space-between; }.core-bulk-reassign { grid-template-columns: 1fr; }.core-bulk-reassign .button { width: 100%; } }
+@media (max-width: 1150px) { .core-kpi-grid { grid-template-columns: repeat(3, 1fr); }.core-job-ledger { grid-template-columns: 1fr 1fr; }.core-import-pane { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .core-job-records-head { align-items: flex-start; flex-direction: column; }.core-job-counts { align-items: flex-start; justify-content: flex-start; min-width: 0; }.core-kpi-grid { grid-template-columns: 1fr 1fr; }.core-job-ledger, .core-job-accountability { grid-template-columns: 1fr; }.core-kpi-grid button { border-bottom: 1px solid var(--line); }.core-import-pane { grid-column: auto; }.core-form-grid { grid-template-columns: 1fr; }.core-wide { grid-column: auto; }.core-import-actions .button { flex: 1 1 160px; }.core-exception-controls { display: grid; }.core-exception-controls label { justify-content: space-between; }.core-bulk-reassign { grid-template-columns: 1fr; }.core-bulk-reassign .button { width: 100%; }.core-due-control { align-items: stretch; flex-direction: column; }.core-due-control button { width: 100%; } }

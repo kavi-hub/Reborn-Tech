@@ -218,6 +218,7 @@ export const itadJobExceptions = mysqlTable("itadJobExceptions", {
   title: varchar("title", { length: 180 }).notNull(),
   detail: text("detail"),
   ownerUserId: int("ownerUserId"),
+  dueAt: timestamp("dueAt"),
   createdByUserId: int("createdByUserId").notNull(),
   resolvedByUserId: int("resolvedByUserId"),
   resolvedAt: timestamp("resolvedAt"),

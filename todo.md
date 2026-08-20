@@ -168,3 +168,12 @@
 - [x] Add brand-scoped Core Job exception KPIs for unresolved count, age thresholds and oldest unresolved item.
 - [x] Present KPI cards and a concise bulk reassignment control in both Reborn and Bulk GSM Core Job workspaces.
 - [x] Add tests for bulk reassignment boundaries, template headers and KPI calculation edge cases.
+
+## ITAD Core milestone 6 — SLA control and directory assignment
+
+- [x] Add optional due dates to Core Job exceptions and derive live SLA state with clear overdue and due-soon calculation rules.
+- [x] Add a brand-safe operations-admin directory API and replace manual reassignment email entry with a picker.
+- [x] Make Core Job KPI cards apply the matching exception filter, including an ageing threshold filter and oldest-item focus.
+- [x] Display due dates and SLA state in the exception review workflow and allow staff to set a date when opening or updating an exception.
+- [x] Add tests for due-date validation, SLA edge cases, admin-directory access and KPI-driven filters.
+- [x] Add explicit API tests rejecting invalid due-date input and denying the operations-admin directory to non-admin callers.

@@ -1,0 +1,1 @@
+ALTER TABLE `itadJobExceptions` ADD `dueAt` timestamp;
