@@ -1,0 +1,9 @@
+/* Material Trace audit pagination: compact controls preserve timeline focus while providing clear, keyboard-friendly traversal. */
+.audit-pagination { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 4px; padding: 14px 0 0 38px; border-top: 1px solid rgba(32,75,62,.16); color: #647063; font: 500 10px "IBM Plex Mono", monospace; letter-spacing: .05em; }
+.audit-pagination > div { display: flex; align-items: center; gap: 9px; }
+.audit-pagination button { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(32,75,62,.35); background: transparent; color: var(--mineral); cursor: pointer; transition: background .16s var(--ease-out), color .16s var(--ease-out); }
+.audit-pagination button:hover:not(:disabled) { background: var(--mineral); color: var(--lime); }
+.audit-pagination button:disabled { opacity: .35; cursor: not-allowed; }
+.audit-pagination strong { min-width: 34px; color: var(--ink); text-align: center; font: 600 10px "IBM Plex Mono", monospace; }
+.collection-audit-customer .audit-pagination { padding-left: 0; font-size: 9px; }
+@media (max-width: 620px) { .audit-pagination { align-items: flex-start; flex-direction: column; padding-left: 0; } }

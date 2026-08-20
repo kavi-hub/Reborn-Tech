@@ -210,9 +210,9 @@ describe("assessment input validation", () => {
   });
 
   it("returns only customer-safe audit events for the signed-in organisation member", async () => {
-    mocks.listCustomerCollectionAuditEvents.mockResolvedValue([]);
+    mocks.listCustomerCollectionAuditEvents.mockResolvedValue({ events: [], total: 0 });
     const customer = appRouter.createCaller({ user: { id: 82, role: "user" }, req: {}, res: {} } as TrpcContext);
-    await expect(customer.customerPortal.auditEvents()).resolves.toEqual([]);
-    expect(mocks.listCustomerCollectionAuditEvents).toHaveBeenCalledWith(82);
+    await expect(customer.customerPortal.auditEvents({ page: 2, pageSize: 6 })).resolves.toEqual({ events: [], total: 0 });
+    expect(mocks.listCustomerCollectionAuditEvents).toHaveBeenCalledWith(82, 2, 6);
   });
 });

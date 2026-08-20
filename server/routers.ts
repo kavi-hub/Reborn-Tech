@@ -142,7 +142,7 @@ export const appRouter = router({
       await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "customer_access_changed", summary: `Customer portal ${input.role} access assigned`, customerVisible: false, actorUserId: ctx.user.id })));
       return { success: true } as const;
     }),
-    listAudit: adminProcedure.input(z.object({ collectionId: z.number().int().positive() })).query(({ input }) => listAdminCollectionAuditEvents(input.collectionId)),
+    listAudit: adminProcedure.input(z.object({ collectionId: z.number().int().positive(), page: z.number().int().min(1).default(1), pageSize: z.number().int().min(1).max(25).default(8) })).query(({ input }) => listAdminCollectionAuditEvents(input.collectionId, input.page, input.pageSize)),
     listAttachments: adminProcedure.input(z.object({ collectionId: z.number().int().positive() })).query(({ input }) => listAdminCollectionAttachments(input.collectionId)),
     uploadAttachment: adminProcedure.input(attachmentUploadSchema).mutation(async ({ ctx, input }) => {
       if (!supportedAttachmentTypes.has(input.contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: "Use PDF, CSV, Excel, Word, PNG or JPEG files only" });
@@ -168,7 +168,7 @@ export const appRouter = router({
   customerPortal: router({
     collections: protectedProcedure.query(({ ctx }) => listCustomerPortalCollections(ctx.user.id)),
     attachments: protectedProcedure.query(({ ctx }) => listCustomerCollectionAttachments(ctx.user.id)),
-    auditEvents: protectedProcedure.query(({ ctx }) => listCustomerCollectionAuditEvents(ctx.user.id)),
+    auditEvents: protectedProcedure.input(z.object({ page: z.number().int().min(1).default(1), pageSize: z.number().int().min(1).max(25).default(8) })).query(({ ctx, input }) => listCustomerCollectionAuditEvents(ctx.user.id, input.page, input.pageSize)),
     downloadAttachment: protectedProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const attachment = await getCustomerCollectionAttachment(ctx.user.id, input.attachmentId);
       return { url: await storageGetSignedUrl(attachment.storageKey), fileName: attachment.fileName };

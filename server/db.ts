@@ -240,13 +240,15 @@ export async function createCollectionAuditEvent(input: { collectionId: number; 
   await db.insert(collectionAuditEvents).values(input);
 }
 
-export async function listAdminCollectionAuditEvents(collectionId: number) {
+export async function listAdminCollectionAuditEvents(collectionId: number, page: number, pageSize: number) {
   const db = await getDb();
   if (!db) throw new Error("Collection audit storage is temporarily unavailable");
-  return db.select({ event: collectionAuditEvents, actor: users }).from(collectionAuditEvents)
+  const [{ total }] = await db.select({ total: count() }).from(collectionAuditEvents).where(eq(collectionAuditEvents.collectionId, collectionId));
+  const events = await db.select({ event: collectionAuditEvents, actor: users }).from(collectionAuditEvents)
     .leftJoin(users, eq(collectionAuditEvents.actorUserId, users.id))
     .where(eq(collectionAuditEvents.collectionId, collectionId))
-    .orderBy(desc(collectionAuditEvents.createdAt));
+    .orderBy(desc(collectionAuditEvents.createdAt)).limit(pageSize).offset((page - 1) * pageSize);
+  return { events, total };
 }
 
 export async function listCollectionIdsForOrganisation(organisationId: number) {
@@ -313,14 +315,20 @@ export async function getCustomerCollectionAttachment(userId: number, attachment
   return match.attachment;
 }
 
-export async function listCustomerCollectionAuditEvents(userId: number) {
+export async function listCustomerCollectionAuditEvents(userId: number, page: number, pageSize: number) {
   const db = await getDb();
   if (!db) throw new Error("Collection audit storage is temporarily unavailable");
-  return db.select({ event: collectionAuditEvents, collection: collectionTracks }).from(customerOrganisationMembers)
+  const conditions = and(eq(customerOrganisationMembers.userId, userId), eq(collectionAuditEvents.customerVisible, true));
+  const [{ total }] = await db.select({ total: count() }).from(customerOrganisationMembers)
     .innerJoin(collectionTracks, eq(collectionTracks.organisationId, customerOrganisationMembers.organisationId))
     .innerJoin(collectionAuditEvents, eq(collectionAuditEvents.collectionId, collectionTracks.id))
-    .where(and(eq(customerOrganisationMembers.userId, userId), eq(collectionAuditEvents.customerVisible, true)))
-    .orderBy(desc(collectionAuditEvents.createdAt));
+    .where(conditions);
+  const events = await db.select({ event: collectionAuditEvents, collection: collectionTracks }).from(customerOrganisationMembers)
+    .innerJoin(collectionTracks, eq(collectionTracks.organisationId, customerOrganisationMembers.organisationId))
+    .innerJoin(collectionAuditEvents, eq(collectionAuditEvents.collectionId, collectionTracks.id))
+    .where(conditions)
+    .orderBy(desc(collectionAuditEvents.createdAt)).limit(pageSize).offset((page - 1) * pageSize);
+  return { events, total };
 }
 
 export async function listCustomerPortalCollections(userId: number) {

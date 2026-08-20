@@ -92,3 +92,9 @@
 - [x] Store immutable collection audit events for route creation, status changes, customer-access changes and attachment activity.
 - [x] Record the acting user, event time, event type and a concise route-specific event summary.
 - [x] Show operations users the full route audit history and expose customer-safe operational milestones in the portal.
+
+## Audit timeline navigation
+
+- [x] Add paginated audit-event retrieval for operations and customer-safe portal histories.
+- [x] Enhance the audit view with a clear visual timeline, event markers and timeline summary.
+- [x] Add accessible previous/next navigation without exposing internal-only events to customers.
