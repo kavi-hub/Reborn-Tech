@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   deleteAssessmentRequest: vi.fn(),
   exportAssessmentRequests: vi.fn(),
   createCollectionTrack: vi.fn(),
+  createItadJobAsset: vi.fn(),
+  createItadJobEvidenceRecord: vi.fn(),
+  createSecurazeImportBatch: vi.fn(),
+  getItadJobDetail: vi.fn(),
+  getItadJobEvidenceFile: vi.fn(),
   listAdminCollections: vi.fn(),
   listCustomerPortalCollections: vi.fn(),
   updateCollectionStatus: vi.fn(),
@@ -47,6 +52,9 @@ vi.mock("./db", () => ({
   deleteAssessmentRequest: mocks.deleteAssessmentRequest,
   exportAssessmentRequests: mocks.exportAssessmentRequests,
   createCollectionTrack: mocks.createCollectionTrack,
+  createItadJobAsset: mocks.createItadJobAsset,
+  createItadJobEvidenceRecord: mocks.createItadJobEvidenceRecord,
+  createSecurazeImportBatch: mocks.createSecurazeImportBatch,
   listAdminCollections: mocks.listAdminCollections,
   listCustomerPortalCollections: mocks.listCustomerPortalCollections,
   updateCollectionStatus: mocks.updateCollectionStatus,
@@ -63,6 +71,8 @@ vi.mock("./db", () => ({
   getMagicPortalAttachment: mocks.getMagicPortalAttachment,
   assignCustomerViewerByOrganisationAdmin: mocks.assignCustomerViewerByOrganisationAdmin,
   getCustomerOrganisationMembership: mocks.getCustomerOrganisationMembership,
+  getItadJobDetail: mocks.getItadJobDetail,
+  getItadJobEvidenceFile: mocks.getItadJobEvidenceFile,
   createCollectionAttachment: mocks.createCollectionAttachment,
   listAdminCollectionAttachments: mocks.listAdminCollectionAttachments,
   getAdminCollectionAttachment: mocks.getAdminCollectionAttachment,
@@ -222,6 +232,44 @@ describe("assessment input validation", () => {
     await expect(admin.collections.resendInvitation({ invitationId: 19, brand: "reborn" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mocks.sendPortalInvitationEmail).not.toHaveBeenCalled();
     expect(mocks.listCollectionIdsForOrganisation).not.toHaveBeenCalled();
+  });
+
+  it("keeps detailed Core Job records inside the requested brand partition", async () => {
+    mocks.getItadJobDetail.mockResolvedValue({ job: { id: 44, brand: "bulk_gsm", jobReference: "BG-2026-001" }, assets: [], evidence: [], importBatches: [] });
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.detail({ jobId: 44, brand: "bulk_gsm" })).resolves.toMatchObject({ job: { brand: "bulk_gsm" } });
+
+    expect(mocks.getItadJobDetail).toHaveBeenCalledWith(44, "bulk_gsm");
+  });
+
+  it("records structured inventory with its explicit Core brand and rejects an invalid quantity", async () => {
+    mocks.createItadJobAsset.mockResolvedValue({ id: 4, jobId: 44, brand: "reborn", assetCategory: "Laptop", quantity: 12 });
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.addAsset({ jobId: 44, brand: "reborn", assetCategory: "Laptop", quantity: 12, condition: "working", dataHandlingState: "evidence_pending" })).resolves.toMatchObject({ asset: { brand: "reborn", quantity: 12 } });
+    await expect(admin.itadCore.addAsset({ jobId: 44, brand: "reborn", assetCategory: "Laptop", quantity: 0, condition: "working", dataHandlingState: "evidence_pending" })).rejects.toThrow();
+
+    expect(mocks.createItadJobAsset).toHaveBeenCalledWith(expect.objectContaining({ jobId: 44, brand: "reborn", assetCategory: "Laptop", quantity: 12 }));
+  });
+
+  it("records Securaze exports as review-required intake instead of treating them as verified erasure evidence", async () => {
+    mocks.createSecurazeImportBatch.mockResolvedValue({ id: 6, jobId: 44, brand: "bulk_gsm", status: "review_required" });
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.recordSecurazeImport({ jobId: 44, brand: "bulk_gsm", importReference: "SZ-2026-004", reportedRecordCount: 40 })).resolves.toMatchObject({ importBatch: { status: "review_required" } });
+
+    expect(mocks.createSecurazeImportBatch).toHaveBeenCalledWith(expect.objectContaining({ jobId: 44, brand: "bulk_gsm", status: "review_required", reportedRecordCount: 40, importedByUserId: 1 }));
+  });
+
+  it("requires the correct job and brand before releasing a Core evidence file", async () => {
+    mocks.getItadJobEvidenceFile.mockResolvedValue({ id: 9, jobId: 44, brand: "reborn", fileName: "certificate.pdf", storageKey: "itad-core/jobs/44/evidence/certificate.pdf" });
+    mocks.storageGetSignedUrl.mockResolvedValue("https://files.example.com/core-evidence");
+    const admin = appRouter.createCaller({ user: { id: 1, role: "admin" }, req: {}, res: {} } as TrpcContext);
+
+    await expect(admin.itadCore.downloadEvidence({ evidenceId: 9, jobId: 44, brand: "reborn" })).resolves.toEqual({ url: "https://files.example.com/core-evidence", fileName: "certificate.pdf" });
+
+    expect(mocks.getItadJobEvidenceFile).toHaveBeenCalledWith({ evidenceId: 9, jobId: 44, brand: "reborn" });
   });
 
   it("passes the signed-in customer admin to the scoped viewer-grant boundary", async () => {

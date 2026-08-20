@@ -131,3 +131,12 @@
 - [x] Add a canonical shared ITAD Core Job model with schema, migration, helpers and APIs, then connect collection routes to it.
 - [x] Implement a Bulk GSM-branded ITAD Dash consumer of the shared Core boundary, without replacing the existing Reborn experience.
 - [x] Add tests covering brand isolation across shared-core collections, invitations and direct-link portal access.
+
+## ITAD Core milestone 2 — Core Job depth
+
+- [x] Add brand-scoped Core Job asset-inventory records with structured asset category, quantity and condition fields.
+- [x] Add brand-scoped Core Job evidence-certificate records with certificate reference, issuer, verification state and optional secured file attachment.
+- [x] Add a validated Securaze import-ready record flow that stores structured import metadata without making unverified erasure claims.
+- [x] Build a concise Reborn operations workflow to manage the deeper Core Job records without adding friction to route creation.
+- [x] Extend the Bulk GSM ITAD Dash to present the same Core Job record depth in its own brand scope.
+- [x] Add API tests for brand isolation, record validation and Core Job evidence access.

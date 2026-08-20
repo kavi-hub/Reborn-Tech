@@ -17,11 +17,12 @@
 .bulk-job-table { margin-top: 45px; background: #f1eee5; color: var(--ink); }
 .bulk-job-table-head { display: flex; justify-content: space-between; padding: 22px 25px; border-bottom: 1px solid var(--line); }
 .bulk-job-table-head span { color: #5a645c; font: 500 10px "IBM Plex Mono", monospace; }
-.bulk-job-table article { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 21px 25px; border-bottom: 1px solid var(--line); }
-.bulk-job-table article > div:first-child { display: grid; gap: 4px; }
-.bulk-job-table article span { color: var(--mineral); font: 500 9px "IBM Plex Mono", monospace; letter-spacing: .1em; }
-.bulk-job-table article strong { font-size: 18px; letter-spacing: -.04em; }
-.bulk-job-table article small { color: #5f675f; }
+.bulk-job-row { display: flex; width: 100%; justify-content: space-between; gap: 20px; align-items: center; padding: 21px 25px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.bulk-job-row:hover, .bulk-job-row.is-active { background: #dce7b9; }
+.bulk-job-row > div:first-child { display: grid; gap: 4px; }
+.bulk-job-row span { color: var(--mineral); font: 500 9px "IBM Plex Mono", monospace; letter-spacing: .1em; }
+.bulk-job-row strong { font-size: 18px; letter-spacing: -.04em; }
+.bulk-job-row small { color: #5f675f; }
 .bulk-stage { text-align: right; }
 .bulk-stage strong { display: block; margin-top: 6px; color: var(--mineral); font-size: 14px; }
-@media (max-width: 720px) { .bulk-dash-head { align-items: flex-start; flex-direction: column; }.bulk-create-grid, .bulk-metrics { grid-template-columns: 1fr; }.bulk-job-table article { align-items: flex-start; flex-direction: column; }.bulk-stage { text-align: left; } }
+@media (max-width: 720px) { .bulk-dash-head { align-items: flex-start; flex-direction: column; }.bulk-create-grid, .bulk-metrics { grid-template-columns: 1fr; }.bulk-job-row { align-items: flex-start; flex-direction: column; }.bulk-stage { text-align: left; } }

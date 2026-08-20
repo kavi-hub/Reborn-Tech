@@ -123,6 +123,62 @@ export const itadJobs = mysqlTable("itadJobs", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** Structured asset inventory. A row can represent an individual identified asset or a homogeneous quantity batch. */
+export const itadJobAssets = mysqlTable("itadJobAssets", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  assetCategory: varchar("assetCategory", { length: 120 }).notNull(),
+  manufacturer: varchar("manufacturer", { length: 120 }),
+  model: varchar("model", { length: 160 }),
+  assetTag: varchar("assetTag", { length: 160 }),
+  serialNumber: varchar("serialNumber", { length: 160 }),
+  quantity: int("quantity").default(1).notNull(),
+  condition: mysqlEnum("condition", ["unassessed", "working", "repairable", "parts_only", "recycling"]).default("unassessed").notNull(),
+  dataHandlingState: mysqlEnum("dataHandlingState", ["not_recorded", "evidence_pending", "evidence_recorded", "exception"]).default("not_recorded").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Documentary evidence held against a Core Job or an individual asset. Verification is an internal workflow state, not a compliance claim. */
+export const itadJobEvidenceRecords = mysqlTable("itadJobEvidenceRecords", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  assetId: int("assetId"),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  evidenceType: mysqlEnum("evidenceType", ["data_erasure", "collection_manifest", "reuse_outcome", "recycling_outcome", "other"]).notNull(),
+  certificateReference: varchar("certificateReference", { length: 180 }),
+  issuer: varchar("issuer", { length: 180 }),
+  verificationState: mysqlEnum("verificationState", ["recorded", "reviewed", "verified", "exception"]).default("recorded").notNull(),
+  evidenceDate: timestamp("evidenceDate"),
+  fileName: varchar("fileName", { length: 255 }),
+  contentType: varchar("contentType", { length: 160 }),
+  sizeBytes: int("sizeBytes"),
+  storageKey: varchar("storageKey", { length: 900 }),
+  customerVisible: boolean("customerVisible").default(false).notNull(),
+  createdByUserId: int("createdByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/** Import ledger for structured Securaze exports. The original file is retained by storage key; parsed outcomes remain reviewable rather than assumed valid. */
+export const itadJobImportBatches = mysqlTable("itadJobImportBatches", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  source: mysqlEnum("source", ["securaze"]).default("securaze").notNull(),
+  importReference: varchar("importReference", { length: 180 }),
+  status: mysqlEnum("status", ["recorded", "review_required", "accepted", "rejected"]).default("recorded").notNull(),
+  sourceFileName: varchar("sourceFileName", { length: 255 }),
+  sourceContentType: varchar("sourceContentType", { length: 160 }),
+  sourceSizeBytes: int("sourceSizeBytes"),
+  storageKey: varchar("storageKey", { length: 900 }),
+  reportedRecordCount: int("reportedRecordCount"),
+  importedRecordCount: int("importedRecordCount").default(0).notNull(),
+  exceptionCount: int("exceptionCount").default(0).notNull(),
+  importedByUserId: int("importedByUserId").notNull(),
+  importedAt: timestamp("importedAt").defaultNow().notNull(),
+});
+
 /** Metadata for route-specific inventories and evidence. File bytes remain in secure object storage. */
 export const collectionAttachments = mysqlTable("collectionAttachments", {
   id: int("id").autoincrement().primaryKey(),
@@ -153,5 +209,8 @@ export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inf
 export type CustomerPortalInvitation = typeof customerPortalInvitations.$inferSelect;
 export type CollectionTrack = typeof collectionTracks.$inferSelect;
 export type ItadJob = typeof itadJobs.$inferSelect;
+export type ItadJobAsset = typeof itadJobAssets.$inferSelect;
+export type ItadJobEvidenceRecord = typeof itadJobEvidenceRecords.$inferSelect;
+export type ItadJobImportBatch = typeof itadJobImportBatches.$inferSelect;
 export type CollectionAttachment = typeof collectionAttachments.$inferSelect;
 export type CollectionAuditEvent = typeof collectionAuditEvents.$inferSelect;

@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gt, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobs, users } from "../drizzle/schema";
+import { assessmentRequests, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobAssets, itadJobEvidenceRecords, itadJobImportBatches, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 
@@ -260,6 +260,68 @@ export async function updateCollectionStatus(id: number, status: CollectionStatu
   if (!updated[0]) throw new Error("Collection route could not be found");
   if (updated[0].collection.jobId) await db.update(itadJobs).set({ stage: jobStageForCollectionStatus[status] }).where(eq(itadJobs.id, updated[0].collection.jobId));
   return updated[0];
+}
+
+async function getItadJobForBrand(jobId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const job = await db.select().from(itadJobs).where(and(eq(itadJobs.id, jobId), eq(itadJobs.brand, brand))).limit(1);
+  if (!job[0]) throw new Error("ITAD Core Job could not be found in this brand workspace");
+  return job[0];
+}
+
+export async function getItadJobDetail(jobId: number, brand: ItadBrand = DEFAULT_ITAD_BRAND) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const job = await getItadJobForBrand(jobId, brand);
+  const [assets, evidence, importBatches] = await Promise.all([
+    db.select().from(itadJobAssets).where(and(eq(itadJobAssets.jobId, jobId), eq(itadJobAssets.brand, brand))).orderBy(desc(itadJobAssets.createdAt)),
+    db.select().from(itadJobEvidenceRecords).where(and(eq(itadJobEvidenceRecords.jobId, jobId), eq(itadJobEvidenceRecords.brand, brand))).orderBy(desc(itadJobEvidenceRecords.createdAt)),
+    db.select().from(itadJobImportBatches).where(and(eq(itadJobImportBatches.jobId, jobId), eq(itadJobImportBatches.brand, brand))).orderBy(desc(itadJobImportBatches.importedAt)),
+  ]);
+  return { job, assets, evidence, importBatches };
+}
+
+export async function createItadJobAsset(input: { jobId: number; brand: ItadBrand; assetCategory: string; manufacturer?: string; model?: string; assetTag?: string; serialNumber?: string; quantity: number; condition: "unassessed" | "working" | "repairable" | "parts_only" | "recycling"; dataHandlingState: "not_recorded" | "evidence_pending" | "evidence_recorded" | "exception" }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  await getItadJobForBrand(input.jobId, input.brand);
+  await db.insert(itadJobAssets).values(input);
+  const created = await db.select().from(itadJobAssets).where(and(eq(itadJobAssets.jobId, input.jobId), eq(itadJobAssets.brand, input.brand), eq(itadJobAssets.assetCategory, input.assetCategory))).orderBy(desc(itadJobAssets.createdAt)).limit(1);
+  if (!created[0]) throw new Error("Asset inventory record could not be created");
+  return created[0];
+}
+
+export async function createItadJobEvidenceRecord(input: { jobId: number; assetId?: number; brand: ItadBrand; evidenceType: "data_erasure" | "collection_manifest" | "reuse_outcome" | "recycling_outcome" | "other"; certificateReference?: string; issuer?: string; verificationState: "recorded" | "reviewed" | "verified" | "exception"; evidenceDate?: Date; fileName?: string; contentType?: string; sizeBytes?: number; storageKey?: string; customerVisible: boolean; createdByUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  await getItadJobForBrand(input.jobId, input.brand);
+  if (input.assetId) {
+    const asset = await db.select().from(itadJobAssets).where(and(eq(itadJobAssets.id, input.assetId), eq(itadJobAssets.jobId, input.jobId), eq(itadJobAssets.brand, input.brand))).limit(1);
+    if (!asset[0]) throw new Error("Asset inventory record could not be found in this Core Job");
+  }
+  await db.insert(itadJobEvidenceRecords).values({ ...input, assetId: input.assetId ?? null, evidenceDate: input.evidenceDate ?? null, fileName: input.fileName ?? null, contentType: input.contentType ?? null, sizeBytes: input.sizeBytes ?? null, storageKey: input.storageKey ?? null });
+  const created = await db.select().from(itadJobEvidenceRecords).where(and(eq(itadJobEvidenceRecords.jobId, input.jobId), eq(itadJobEvidenceRecords.brand, input.brand))).orderBy(desc(itadJobEvidenceRecords.createdAt)).limit(1);
+  if (!created[0]) throw new Error("Evidence record could not be created");
+  return created[0];
+}
+
+export async function createSecurazeImportBatch(input: { jobId: number; brand: ItadBrand; importReference?: string; status: "recorded" | "review_required" | "accepted" | "rejected"; sourceFileName?: string; sourceContentType?: string; sourceSizeBytes?: number; storageKey?: string; reportedRecordCount?: number; importedRecordCount: number; exceptionCount: number; importedByUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  await getItadJobForBrand(input.jobId, input.brand);
+  await db.insert(itadJobImportBatches).values({ ...input, source: "securaze", importReference: input.importReference ?? null, sourceFileName: input.sourceFileName ?? null, sourceContentType: input.sourceContentType ?? null, sourceSizeBytes: input.sourceSizeBytes ?? null, storageKey: input.storageKey ?? null, reportedRecordCount: input.reportedRecordCount ?? null });
+  const created = await db.select().from(itadJobImportBatches).where(and(eq(itadJobImportBatches.jobId, input.jobId), eq(itadJobImportBatches.brand, input.brand))).orderBy(desc(itadJobImportBatches.importedAt)).limit(1);
+  if (!created[0]) throw new Error("Securaze import batch could not be recorded");
+  return created[0];
+}
+
+export async function getItadJobEvidenceFile(input: { evidenceId: number; jobId: number; brand: ItadBrand }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const evidence = await db.select().from(itadJobEvidenceRecords).where(and(eq(itadJobEvidenceRecords.id, input.evidenceId), eq(itadJobEvidenceRecords.jobId, input.jobId), eq(itadJobEvidenceRecords.brand, input.brand))).limit(1);
+  if (!evidence[0]?.storageKey || !evidence[0].fileName) throw new Error("This evidence record does not have an attached file in this Core Job");
+  return evidence[0];
 }
 
 export async function createCollectionAttachment(input: { collectionId: number; attachmentType: "inventory" | "evidence"; fileName: string; contentType: string; sizeBytes: number; storageKey: string; customerVisible: boolean; uploadedByUserId: number }) {

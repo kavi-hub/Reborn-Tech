@@ -8,6 +8,7 @@
 @import "./audit-pagination.css";
 @import "./invitation-styles.css";
 @import "./bulk-dash.css";
+@import "./core-job-records.css";
 
 @custom-variant dark (&:is(.dark *));
 

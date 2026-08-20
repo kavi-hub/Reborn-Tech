@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { assignCustomerViewerByOrganisationAdmin, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getMagicPortalAttachment, getMagicPortalOverview, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOrganisationPortalInvitations, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus } from "./db";
+import { assignCustomerViewerByOrganisationAdmin, claimCustomerPortalInvitation, createAssessmentRequest, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobEvidenceRecord, createSecurazeImportBatch, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, getAdminCollectionAttachment, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getMagicPortalAttachment, getMagicPortalOverview, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOrganisationPortalInvitations, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, revokePortalInvitation, updateAssessmentStatus, updateCollectionStatus } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -60,6 +60,45 @@ const attachmentUploadSchema = z.object({
   contentType: z.string().trim().max(160),
   contentBase64: z.string().min(1).max(14_000_000),
   customerVisible: z.boolean().default(true),
+});
+const itadBrandSchema = z.enum(["reborn", "bulk_gsm"]);
+const coreFileSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().max(160),
+  contentBase64: z.string().min(1).max(14_000_000),
+});
+const coreAssetSchema = z.object({
+  jobId: z.number().int().positive(),
+  brand: itadBrandSchema,
+  assetCategory: z.string().trim().min(2).max(120),
+  manufacturer: z.string().trim().max(120).optional(),
+  model: z.string().trim().max(160).optional(),
+  assetTag: z.string().trim().max(160).optional(),
+  serialNumber: z.string().trim().max(160).optional(),
+  quantity: z.number().int().min(1).max(100_000).default(1),
+  condition: z.enum(["unassessed", "working", "repairable", "parts_only", "recycling"]).default("unassessed"),
+  dataHandlingState: z.enum(["not_recorded", "evidence_pending", "evidence_recorded", "exception"]).default("not_recorded"),
+});
+const coreEvidenceSchema = z.object({
+  jobId: z.number().int().positive(),
+  assetId: z.number().int().positive().optional(),
+  brand: itadBrandSchema,
+  evidenceType: z.enum(["data_erasure", "collection_manifest", "reuse_outcome", "recycling_outcome", "other"]),
+  certificateReference: z.string().trim().max(180).optional(),
+  issuer: z.string().trim().max(180).optional(),
+  verificationState: z.enum(["recorded", "reviewed", "verified", "exception"]).default("recorded"),
+  evidenceDate: z.coerce.date().optional(),
+  customerVisible: z.boolean().default(false),
+  file: coreFileSchema.optional(),
+});
+const securazeImportSchema = z.object({
+  jobId: z.number().int().positive(),
+  brand: itadBrandSchema,
+  importReference: z.string().trim().max(180).optional(),
+  reportedRecordCount: z.number().int().min(0).max(1_000_000).optional(),
+  importedRecordCount: z.number().int().min(0).max(1_000_000).default(0),
+  exceptionCount: z.number().int().min(0).max(1_000_000).default(0),
+  file: coreFileSchema.optional(),
 });
 
 export const appRouter = router({
@@ -133,6 +172,46 @@ export const appRouter = router({
     delete: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
       await deleteAssessmentRequest(input.id);
       return { success: true } as const;
+    }),
+  }),
+  itadCore: router({
+    detail: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema })).query(({ input }) => getItadJobDetail(input.jobId, input.brand)),
+    addAsset: adminProcedure.input(coreAssetSchema).mutation(async ({ input }) => {
+      const asset = await createItadJobAsset(input);
+      return { asset };
+    }),
+    recordEvidence: adminProcedure.input(coreEvidenceSchema).mutation(async ({ ctx, input }) => {
+      let file: { fileName: string; contentType: string; sizeBytes: number; storageKey: string } | undefined;
+      if (input.file) {
+        if (!supportedAttachmentTypes.has(input.file.contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: "Use PDF, CSV, Excel, Word, PNG or JPEG evidence files only" });
+        const bytes = Buffer.from(input.file.contentBase64, "base64");
+        if (!bytes.length || bytes.length > 10_000_000) throw new TRPCError({ code: "BAD_REQUEST", message: "Evidence files must be between 1 byte and 10 MB" });
+        const safeName = input.file.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const stored = await storagePut(`itad-core/jobs/${input.jobId}/evidence/${Date.now()}-${safeName}`, bytes, input.file.contentType);
+        file = { fileName: input.file.fileName, contentType: input.file.contentType, sizeBytes: bytes.length, storageKey: stored.key };
+      }
+      const { file: _uploadedFile, ...recordInput } = input;
+      const evidence = await createItadJobEvidenceRecord({ ...recordInput, ...file, createdByUserId: ctx.user.id });
+      return { evidence };
+    }),
+    recordSecurazeImport: adminProcedure.input(securazeImportSchema).mutation(async ({ ctx, input }) => {
+      let file: { sourceFileName: string; sourceContentType: string; sourceSizeBytes: number; storageKey: string } | undefined;
+      if (input.file) {
+        if (!["text/csv", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(input.file.contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: "Use a CSV or spreadsheet export for Securaze intake" });
+        const bytes = Buffer.from(input.file.contentBase64, "base64");
+        if (!bytes.length || bytes.length > 10_000_000) throw new TRPCError({ code: "BAD_REQUEST", message: "Import files must be between 1 byte and 10 MB" });
+        const safeName = input.file.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const stored = await storagePut(`itad-core/jobs/${input.jobId}/securaze/${Date.now()}-${safeName}`, bytes, input.file.contentType);
+        file = { sourceFileName: input.file.fileName, sourceContentType: input.file.contentType, sourceSizeBytes: bytes.length, storageKey: stored.key };
+      }
+      const { file: _uploadedFile, ...recordInput } = input;
+      const importBatch = await createSecurazeImportBatch({ ...recordInput, ...file, status: "review_required", importedByUserId: ctx.user.id });
+      return { importBatch };
+    }),
+    downloadEvidence: adminProcedure.input(z.object({ evidenceId: z.number().int().positive(), jobId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ input }) => {
+      const evidence = await getItadJobEvidenceFile(input);
+      if (!evidence.storageKey || !evidence.fileName) throw new TRPCError({ code: "NOT_FOUND", message: "This evidence record does not have an attached file" });
+      return { url: await storageGetSignedUrl(evidence.storageKey), fileName: evidence.fileName };
     }),
   }),
   collections: router({

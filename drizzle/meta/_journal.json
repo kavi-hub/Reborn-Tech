@@ -64,6 +64,13 @@
       "when": 1787222378866,
       "tag": "0008_fair_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1787230008007,
+      "tag": "0009_last_tomorrow_man",
+      "breakpoints": true
     }
   ]
 }
