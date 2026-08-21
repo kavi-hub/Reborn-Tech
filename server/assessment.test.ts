@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import JSZip from "jszip";
 
 const mocks = vi.hoisted(() => ({
   createAssessmentRequest: vi.fn(),
@@ -843,5 +844,21 @@ describe("assessment input validation", () => {
     await expect(client.clientPortal.completionArchive({ completedFrom: new Date("2026-10-01"), completedTo: new Date("2026-09-01"), sort: "newest" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(client.clientPortal.completionArchive({ sort: "newest", page: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(client.clientPortal.completionArchive({ sort: "newest", pageSize: 51 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("packages only selected completed client-owned summaries into a bounded ZIP export", async () => {
+    mocks.listClientPortalJobLifecycle.mockResolvedValue([{ job: { id: 12, jobReference: "RB-100", title: "First collection", stage: "completed", completedAt: new Date("2026-09-10"), updatedAt: new Date("2026-09-10") }, collection: { id: 91 } }, { job: { id: 13, jobReference: "RB-101", title: "Second collection", stage: "completed", completedAt: new Date("2026-09-11"), updatedAt: new Date("2026-09-11") }, collection: { id: 92 } }]);
+    mocks.listClientPortalCoreEvidence.mockResolvedValue([]);
+    mocks.listClientPortalImpactStatements.mockResolvedValue([]);
+    mocks.listClientPortalCollections.mockResolvedValue([{ organisation: { name: "Example client" }, collection: { id: 91 } }]);
+    mocks.createCompletionSummaryPdf.mockResolvedValueOnce("JVBERi0xLjQKMQ==").mockResolvedValueOnce("JVBERi0xLjQKMQ==");
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    const exported = await client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: [12, 13] });
+    expect(exported.fileName).toBe("reborn-itad-completion-summaries.zip");
+    const zip = await JSZip.loadAsync(Buffer.from(exported.contentBase64, "base64"));
+    expect(Object.keys(zip.files)).toEqual(expect.arrayContaining(["rb-100-completion-summary.pdf", "rb-101-completion-summary.pdf"]));
+    await expect(client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: [12, 12] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: Array.from({ length: 11 }, (_, index) => index + 1) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: [12, 99] })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

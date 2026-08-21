@@ -250,3 +250,10 @@
 - [x] Add responsive client controls for preview, pagination and document-type filtering without adding a separate dashboard route.
 - [x] Add tests for preview scope, page boundaries, totals and document-type filters.
 - [x] Handle failed preview requests without leaving an unhandled client-side promise rejection.
+
+## Client bulk completion-summary export
+
+- [x] Add a password-scoped ZIP export for up to ten distinct completed Core Job summaries per request.
+- [x] Reject cross-organisation, cross-brand, incomplete or duplicate job selections before a bulk PDF package is generated.
+- [x] Add archive multi-select controls, a selected-count action and a ZIP download flow.
+- [x] Add tests for bulk export scope, selection limits, duplicate IDs and completed-job enforcement.

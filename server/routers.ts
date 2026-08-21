@@ -1,6 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { createHash, randomBytes } from "node:crypto";
+import JSZip from "jszip";
 import { z } from "zod";
 import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createClientPasswordResetToken, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getActiveClientPortalAccountForSession, getAdminCollectionAttachment, getBrandSupportContact, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAccountForBrand, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAccountActivity, listClientPortalAccounts, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, resetClientPortalPassword, revokePortalInvitation, setClientPortalAccountStatus, updateAssessmentStatus, updateCollectionStatus, updateItadJobException, upsertBrandSupportContact } from "./db";
 import { approveItadJobImpactStatement, listClientPortalCompletionArchive, listClientPortalImpactStatements, listClientPortalJobLifecycle, recordClientNotification, updateItadJobStage, upsertItadJobImpactStatement } from "./db";
@@ -37,6 +38,23 @@ async function deliverInvitation(input: { invitation: { id: number; email: strin
     console.error("[Email] Invitation delivery failed", error);
     return { delivered: false } as const;
   }
+}
+
+async function buildClientCompletionSummaries(session: { organisationId: number; brand: "reborn" | "bulk_gsm" }, jobIds: number[]) {
+  const [lifecycle, documents, impacts, collections] = await Promise.all([
+    listClientPortalJobLifecycle(session.organisationId, session.brand),
+    listClientPortalCoreEvidence(session.organisationId, session.brand),
+    listClientPortalImpactStatements(session.organisationId, session.brand),
+    listClientPortalCollections(session.organisationId, session.brand),
+  ]);
+  const completedJobs = jobIds.map((jobId) => lifecycle.find((entry) => entry.job.id === jobId && entry.job.stage === "completed"));
+  if (completedJobs.some((entry) => !entry)) throw new TRPCError({ code: "NOT_FOUND", message: "Every selected summary must belong to a completed job in your organisation" });
+  const organisationName = collections[0]?.organisation.name || "Client organisation";
+  return Promise.all(completedJobs.map(async (current) => {
+    const job = current!.job;
+    const contentBase64 = await createCompletionSummaryPdf({ brand: session.brand, jobReference: job.jobReference, jobTitle: job.title, organisationName, completedAt: job.completedAt || job.updatedAt, documents: documents.filter((entry) => entry.job.id === job.id).map((entry) => entry.evidence), impact: impacts.find((entry) => entry.job.id === job.id)?.impact || null });
+    return { fileName: `${job.jobReference.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-completion-summary.pdf`, contentBase64 };
+  }));
 }
 
 export const assessmentInputSchema = z.object({
@@ -233,16 +251,14 @@ export const appRouter = router({
       return { url: await storageGetSignedUrl(evidence.storageKey), fileName: evidence.fileName };
     }),
     downloadCompletionSummary: clientPortalProcedure.input(z.object({ jobId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      const [lifecycle, documents, impacts, collections] = await Promise.all([
-        listClientPortalJobLifecycle(ctx.clientSession.organisationId, ctx.clientSession.brand),
-        listClientPortalCoreEvidence(ctx.clientSession.organisationId, ctx.clientSession.brand),
-        listClientPortalImpactStatements(ctx.clientSession.organisationId, ctx.clientSession.brand),
-        listClientPortalCollections(ctx.clientSession.organisationId, ctx.clientSession.brand),
-      ]);
-      const current = lifecycle.find((entry) => entry.job.id === input.jobId && entry.job.stage === "completed");
-      if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "A completion summary is available only for a completed job in your organisation" });
-      const contentBase64 = await createCompletionSummaryPdf({ brand: ctx.clientSession.brand, jobReference: current.job.jobReference, jobTitle: current.job.title, organisationName: collections[0]?.organisation.name || "Client organisation", completedAt: current.job.completedAt || current.job.updatedAt, documents: documents.filter((entry) => entry.job.id === input.jobId).map((entry) => entry.evidence), impact: impacts.find((entry) => entry.job.id === input.jobId)?.impact || null });
-      return { fileName: `${current.job.jobReference.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-completion-summary.pdf`, contentBase64 };
+      const [summary] = await buildClientCompletionSummaries(ctx.clientSession, [input.jobId]);
+      return summary;
+    }),
+    bulkDownloadCompletionSummaries: clientPortalProcedure.input(z.object({ jobIds: z.array(z.number().int().positive()).min(2).max(10) }).refine((input) => new Set(input.jobIds).size === input.jobIds.length, { message: "Select each completion summary only once", path: ["jobIds"] })).mutation(async ({ ctx, input }) => {
+      const summaries = await buildClientCompletionSummaries(ctx.clientSession, input.jobIds);
+      const zip = new JSZip();
+      summaries.forEach((summary) => zip.file(summary.fileName, summary.contentBase64, { base64: true }));
+      return { fileName: "reborn-itad-completion-summaries.zip", contentBase64: await zip.generateAsync({ type: "base64", compression: "DEFLATE", compressionOptions: { level: 6 } }) };
     }),
   }),
   assessment: router({
