@@ -75,10 +75,12 @@ const mocks = vi.hoisted(() => ({
   resetClientPortalPassword: vi.fn(),
   listClientPortalAccounts: vi.fn(),
   listClientPortalAccountActivity: vi.fn(),
+  listClientPortalBulkExportAudit: vi.fn(),
   getBrandSupportContact: vi.fn(),
   upsertBrandSupportContact: vi.fn(),
   setClientPortalAccountStatus: vi.fn(),
   recordClientPortalSignIn: vi.fn(),
+  recordClientPortalBulkExportAudit: vi.fn(),
   listClientPortalCollections: vi.fn(),
   listClientPortalCompletionArchive: vi.fn(),
   listClientPortalAttachments: vi.fn(),
@@ -161,10 +163,12 @@ vi.mock("./db", () => ({
   resetClientPortalPassword: mocks.resetClientPortalPassword,
   listClientPortalAccounts: mocks.listClientPortalAccounts,
   listClientPortalAccountActivity: mocks.listClientPortalAccountActivity,
+  listClientPortalBulkExportAudit: mocks.listClientPortalBulkExportAudit,
   getBrandSupportContact: mocks.getBrandSupportContact,
   upsertBrandSupportContact: mocks.upsertBrandSupportContact,
   setClientPortalAccountStatus: mocks.setClientPortalAccountStatus,
   recordClientPortalSignIn: mocks.recordClientPortalSignIn,
+  recordClientPortalBulkExportAudit: mocks.recordClientPortalBulkExportAudit,
   listClientPortalCollections: mocks.listClientPortalCollections,
   listClientPortalCompletionArchive: mocks.listClientPortalCompletionArchive,
   listClientPortalAttachments: mocks.listClientPortalAttachments,
@@ -857,8 +861,22 @@ describe("assessment input validation", () => {
     expect(exported.fileName).toBe("reborn-itad-completion-summaries.zip");
     const zip = await JSZip.loadAsync(Buffer.from(exported.contentBase64, "base64"));
     expect(Object.keys(zip.files)).toEqual(expect.arrayContaining(["rb-100-completion-summary.pdf", "rb-101-completion-summary.pdf"]));
+    const manifest = await zip.file("completion-summary-manifest.csv")?.async("string");
+    expect(manifest).toContain("Job reference,Job title,Completed at,Issued document categories");
+    expect(manifest).toContain("RB-100");
+    expect(mocks.recordClientPortalBulkExportAudit).toHaveBeenCalledWith(expect.objectContaining({ accountId: 44, organisationId: 55, brand: "reborn", jobReferences: ["RB-100", "RB-101"] }));
     await expect(client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: [12, 12] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: Array.from({ length: 11 }, (_, index) => index + 1) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(client.clientPortal.bulkDownloadCompletionSummaries({ jobIds: [12, 99] })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("returns bulk package audit history only to a client administrator in the same organisation and brand", async () => {
+    mocks.listClientPortalBulkExportAudit.mockResolvedValue([{ event: { id: 31, accountId: 44, organisationId: 55, brand: "reborn", summaryCount: 2, jobReferences: "RB-100, RB-101", createdAt: new Date() }, account: { id: 44, email: "admin@example.com" } }]);
+    const admin = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "reborn", role: "admin", email: "admin@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    const audit = await admin.clientPortal.bulkExportAudit();
+    expect(audit).toHaveLength(1);
+    expect(mocks.listClientPortalBulkExportAudit).toHaveBeenCalledWith({ organisationId: 55, brand: "reborn" });
+    const viewer = appRouter.createCaller({ user: null, clientSession: { accountId: 45, organisationId: 55, brand: "reborn", role: "viewer", email: "viewer@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    await expect(viewer.clientPortal.bulkExportAudit()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

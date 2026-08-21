@@ -1,7 +1,7 @@
 import { and, asc, count, countDistinct, desc, eq, gt, gte, inArray, isNotNull, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createHash, randomBytes } from "node:crypto";
-import { assessmentRequests, brandSupportContacts, clientNotificationEvents, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImpactStatements, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
+import { assessmentRequests, brandSupportContacts, clientNotificationEvents, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalBulkExportAuditEvents, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImpactStatements, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 import { calculateCoreJobExceptionKpis } from "../shared/coreJobKpis";
@@ -204,6 +204,21 @@ export async function listClientPortalAccountActivity(brand: ItadBrand, limit = 
     .innerJoin(customerOrganisations, eq(customerOrganisations.id, customerPortalAccounts.organisationId))
     .leftJoin(users, eq(users.id, customerPortalAccountActivityEvents.actorUserId))
     .where(eq(customerPortalAccounts.brand, brand)).orderBy(desc(customerPortalAccountActivityEvents.createdAt)).limit(limit);
+}
+
+export async function recordClientPortalBulkExportAudit(input: { accountId: number; organisationId: number; brand: ItadBrand; jobReferences: string[] }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  await db.insert(customerPortalBulkExportAuditEvents).values({ accountId: input.accountId, organisationId: input.organisationId, brand: input.brand, summaryCount: input.jobReferences.length, jobReferences: input.jobReferences.join(", ") });
+}
+
+export async function listClientPortalBulkExportAudit(input: { organisationId: number; brand: ItadBrand; limit?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Customer portal storage is temporarily unavailable");
+  return db.select({ event: customerPortalBulkExportAuditEvents, account: { id: customerPortalAccounts.id, email: customerPortalAccounts.email } }).from(customerPortalBulkExportAuditEvents)
+    .innerJoin(customerPortalAccounts, eq(customerPortalAccounts.id, customerPortalBulkExportAuditEvents.accountId))
+    .where(and(eq(customerPortalBulkExportAuditEvents.organisationId, input.organisationId), eq(customerPortalBulkExportAuditEvents.brand, input.brand)))
+    .orderBy(desc(customerPortalBulkExportAuditEvents.createdAt)).limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
 }
 
 export async function getBrandSupportContact(brand: ItadBrand) {

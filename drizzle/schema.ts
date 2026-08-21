@@ -123,6 +123,17 @@ export const customerPortalAccountActivityEvents = mysqlTable("customerPortalAcc
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+/** Immutable record of a client-admin bulk completion-summary package download. */
+export const customerPortalBulkExportAuditEvents = mysqlTable("customerPortalBulkExportAuditEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  accountId: int("accountId").notNull(),
+  organisationId: int("organisationId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  summaryCount: int("summaryCount").notNull(),
+  jobReferences: text("jobReferences").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 /** A configurable operational contact surfaced only to authenticated clients of the matching brand. */
 export const brandSupportContacts = mysqlTable("brandSupportContacts", {
   id: int("id").autoincrement().primaryKey(),
@@ -343,6 +354,7 @@ export const collectionAuditEvents = mysqlTable("collectionAuditEvents", {
 export type CustomerOrganisation = typeof customerOrganisations.$inferSelect;
 export type CustomerOrganisationMember = typeof customerOrganisationMembers.$inferSelect;
 export type CustomerPortalInvitation = typeof customerPortalInvitations.$inferSelect;
+export type CustomerPortalBulkExportAuditEvent = typeof customerPortalBulkExportAuditEvents.$inferSelect;
 export type CollectionTrack = typeof collectionTracks.$inferSelect;
 export type ItadJob = typeof itadJobs.$inferSelect;
 export type ItadJobAsset = typeof itadJobAssets.$inferSelect;

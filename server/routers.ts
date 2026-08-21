@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { createHash, randomBytes } from "node:crypto";
 import JSZip from "jszip";
 import { z } from "zod";
-import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createClientPasswordResetToken, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getActiveClientPortalAccountForSession, getAdminCollectionAttachment, getBrandSupportContact, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAccountForBrand, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAccountActivity, listClientPortalAccounts, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, resetClientPortalPassword, revokePortalInvitation, setClientPortalAccountStatus, updateAssessmentStatus, updateCollectionStatus, updateItadJobException, upsertBrandSupportContact } from "./db";
+import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createClientPasswordResetToken, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getActiveClientPortalAccountForSession, getAdminCollectionAttachment, getBrandSupportContact, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAccountForBrand, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAccountActivity, listClientPortalAccounts, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalBulkExportAudit, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalBulkExportAudit, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, resetClientPortalPassword, revokePortalInvitation, setClientPortalAccountStatus, updateAssessmentStatus, updateCollectionStatus, updateItadJobException, upsertBrandSupportContact } from "./db";
 import { approveItadJobImpactStatement, listClientPortalCompletionArchive, listClientPortalImpactStatements, listClientPortalJobLifecycle, recordClientNotification, updateItadJobStage, upsertItadJobImpactStatement } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -52,10 +52,13 @@ async function buildClientCompletionSummaries(session: { organisationId: number;
   const organisationName = collections[0]?.organisation.name || "Client organisation";
   return Promise.all(completedJobs.map(async (current) => {
     const job = current!.job;
-    const contentBase64 = await createCompletionSummaryPdf({ brand: session.brand, jobReference: job.jobReference, jobTitle: job.title, organisationName, completedAt: job.completedAt || job.updatedAt, documents: documents.filter((entry) => entry.job.id === job.id).map((entry) => entry.evidence), impact: impacts.find((entry) => entry.job.id === job.id)?.impact || null });
-    return { fileName: `${job.jobReference.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-completion-summary.pdf`, contentBase64 };
+    const issuedDocuments = documents.filter((entry) => entry.job.id === job.id).map((entry) => entry.evidence);
+    const contentBase64 = await createCompletionSummaryPdf({ brand: session.brand, jobReference: job.jobReference, jobTitle: job.title, organisationName, completedAt: job.completedAt || job.updatedAt, documents: issuedDocuments, impact: impacts.find((entry) => entry.job.id === job.id)?.impact || null });
+    return { fileName: `${job.jobReference.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-completion-summary.pdf`, contentBase64, jobReference: job.jobReference, jobTitle: job.title, completedAt: job.completedAt || job.updatedAt, documentTypes: Array.from(new Set(issuedDocuments.map((entry) => entry.evidenceType))) };
   }));
 }
+
+const csvValue = (value: string | Date) => `"${String(value instanceof Date ? value.toISOString() : value).replace(/"/g, '""')}"`;
 
 export const assessmentInputSchema = z.object({
   fullName: z.string().trim().min(2, "Enter your name").max(160),
@@ -258,7 +261,15 @@ export const appRouter = router({
       const summaries = await buildClientCompletionSummaries(ctx.clientSession, input.jobIds);
       const zip = new JSZip();
       summaries.forEach((summary) => zip.file(summary.fileName, summary.contentBase64, { base64: true }));
-      return { fileName: "reborn-itad-completion-summaries.zip", contentBase64: await zip.generateAsync({ type: "base64", compression: "DEFLATE", compressionOptions: { level: 6 } }) };
+      const manifest = ["Job reference,Job title,Completed at,Issued document categories", ...summaries.map((summary) => [summary.jobReference, summary.jobTitle, summary.completedAt, summary.documentTypes.join("; ")].map(csvValue).join(","))].join("\n");
+      zip.file("completion-summary-manifest.csv", manifest);
+      const contentBase64 = await zip.generateAsync({ type: "base64", compression: "DEFLATE", compressionOptions: { level: 6 } });
+      await recordClientPortalBulkExportAudit({ accountId: ctx.clientSession.accountId, organisationId: ctx.clientSession.organisationId, brand: ctx.clientSession.brand, jobReferences: summaries.map((summary) => summary.jobReference) });
+      return { fileName: "reborn-itad-completion-summaries.zip", contentBase64 };
+    }),
+    bulkExportAudit: clientPortalProcedure.query(async ({ ctx }) => {
+      if (ctx.clientSession.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Client administrator access is required to view package download history" });
+      return listClientPortalBulkExportAudit({ organisationId: ctx.clientSession.organisationId, brand: ctx.clientSession.brand });
     }),
   }),
   assessment: router({

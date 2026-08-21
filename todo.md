@@ -257,3 +257,11 @@
 - [x] Reject cross-organisation, cross-brand, incomplete or duplicate job selections before a bulk PDF package is generated.
 - [x] Add archive multi-select controls, a selected-count action and a ZIP download flow.
 - [x] Add tests for bulk export scope, selection limits, duplicate IDs and completed-job enforcement.
+
+## Client bulk export manifest and audit trail
+
+- [x] Add a current-page select-all control that respects the ten-summary export limit and preserves clear selection feedback.
+- [x] Add a CSV manifest inside each authorised ZIP package with the exported job reference, title, completion date and issued document categories.
+- [x] Add immutable password-scoped bulk export audit records with account, brand, organisation, selected summary count and timestamp.
+- [x] Add a client-administrator-only audit view that excludes export history from standard client viewers.
+- [x] Add tests for manifest content, current-page selection, audit scope and client-admin-only access.
