@@ -214,3 +214,14 @@
 - [x] Run the automated brand-isolation and protected-route suite for Reborn and Bulk GSM views.
 - [x] Verify the rendered Reborn Operations and Bulk GSM ITAD Dash routes remain distinct workspaces.
 - [x] Confirm the latest shared-repository commit, clean working tree and published deployment state.
+
+## ITAD lifecycle critical path — onboarding to verified outcome
+
+- [x] Audit every current field, state transition, upload, approval, client view and email across onboarding, collection and job completion.
+- [x] Add lifecycle-ready client documents for Securaze evidence, destruction certificates and impact statements, each requiring explicit staff approval before release.
+- [x] Add client notifications for invitation onboarding, collection booked and job completed, with non-blocking delivery status retained for operations.
+- [x] Add a privacy-safe impact statement that tracks verified non-financial outcomes without displaying cost, resale value or profit data.
+- [x] Present a simple client lifecycle timeline, approved document downloads and verified impact outcomes in the password-gated dashboard.
+- [x] Add end-to-end regression coverage for brand scope, document release, notification paths and completed-job access.
+- [x] Pre-populate the Operations impact form from the current saved impact statement to prevent accidental zero-value overwrites during review.
+- [x] Add lifecycle regression coverage proving booked and completed jobs retain delivery failures without blocking the operational state change.

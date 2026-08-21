@@ -16,6 +16,10 @@ const mocks = vi.hoisted(() => ({
   createSecurazeImportBatch: vi.fn(),
   createSecurazeImportExceptions: vi.fn(),
   approveItadJobEvidence: vi.fn(),
+  approveItadJobImpactStatement: vi.fn(),
+  updateItadJobStage: vi.fn(),
+  upsertItadJobImpactStatement: vi.fn(),
+  recordClientNotification: vi.fn(),
   getItadJobDetail: vi.fn(),
   getItadJobExceptionKpis: vi.fn(),
   getItadJobEvidenceFile: vi.fn(),
@@ -56,6 +60,8 @@ const mocks = vi.hoisted(() => ({
   findOperationsAdminByEmail: vi.fn(),
   sendPortalInvitationEmail: vi.fn(),
   sendCollectionStatusEmail: vi.fn(),
+  sendCollectionBookedEmail: vi.fn(),
+  sendJobCompletedEmail: vi.fn(),
   sendExceptionLifecycleEmail: vi.fn(),
   sendClientPasswordResetEmail: vi.fn(),
   getClientAccountActivationInvitation: vi.fn(),
@@ -76,6 +82,8 @@ const mocks = vi.hoisted(() => ({
   listClientPortalAttachments: vi.fn(),
   listClientPortalAuditEvents: vi.fn(),
   listClientPortalCoreEvidence: vi.fn(),
+  listClientPortalImpactStatements: vi.fn(),
+  listClientPortalJobLifecycle: vi.fn(),
   getClientPortalAttachment: vi.fn(),
   getClientPortalCoreEvidence: vi.fn(),
   hashClientPassword: vi.fn(),
@@ -100,6 +108,10 @@ vi.mock("./db", () => ({
   createSecurazeImportBatch: mocks.createSecurazeImportBatch,
   createSecurazeImportExceptions: mocks.createSecurazeImportExceptions,
   approveItadJobEvidence: mocks.approveItadJobEvidence,
+  approveItadJobImpactStatement: mocks.approveItadJobImpactStatement,
+  updateItadJobStage: mocks.updateItadJobStage,
+  upsertItadJobImpactStatement: mocks.upsertItadJobImpactStatement,
+  recordClientNotification: mocks.recordClientNotification,
   listAdminCollections: mocks.listAdminCollections,
   listCustomerPortalCollections: mocks.listCustomerPortalCollections,
   updateCollectionStatus: mocks.updateCollectionStatus,
@@ -153,6 +165,8 @@ vi.mock("./db", () => ({
   listClientPortalAttachments: mocks.listClientPortalAttachments,
   listClientPortalAuditEvents: mocks.listClientPortalAuditEvents,
   listClientPortalCoreEvidence: mocks.listClientPortalCoreEvidence,
+  listClientPortalImpactStatements: mocks.listClientPortalImpactStatements,
+  listClientPortalJobLifecycle: mocks.listClientPortalJobLifecycle,
   getClientPortalAttachment: mocks.getClientPortalAttachment,
   getClientPortalCoreEvidence: mocks.getClientPortalCoreEvidence,
 }));
@@ -164,6 +178,8 @@ vi.mock("./_core/notification", () => ({
 vi.mock("./rebornEmail", () => ({
   sendPortalInvitationEmail: mocks.sendPortalInvitationEmail,
   sendCollectionStatusEmail: mocks.sendCollectionStatusEmail,
+  sendCollectionBookedEmail: mocks.sendCollectionBookedEmail,
+  sendJobCompletedEmail: mocks.sendJobCompletedEmail,
   sendExceptionLifecycleEmail: mocks.sendExceptionLifecycleEmail,
   sendClientPasswordResetEmail: mocks.sendClientPasswordResetEmail,
 }));
@@ -733,5 +749,58 @@ describe("assessment input validation", () => {
     await expect(admin.clientAccounts.updateSupportContact({ brand: "reborn", contactName: "Reborn account manager", email: "reborn@example.com" })).resolves.toMatchObject({ brand: "reborn" });
     expect(mocks.getBrandSupportContact).toHaveBeenCalledWith("bulk_gsm");
     expect(mocks.upsertBrandSupportContact).toHaveBeenCalledWith({ brand: "reborn", contactName: "Reborn account manager", email: "reborn@example.com", phone: null, updatedByUserId: 7 });
+  });
+
+  it("sends and records the agreed collection-booked milestone only when a route is confirmed", async () => {
+    mocks.updateCollectionStatus.mockResolvedValue({ collection: { id: 91, jobId: 12, reference: "RB-100", title: "London laptop collection", scheduledFor: new Date("2026-09-10") }, organisation: { id: 55, name: "Example client" } });
+    mocks.listActivePortalInvitations.mockResolvedValue([{ id: 7, email: "client@example.com", status: "claimed", token: "token" }]);
+    mocks.sendCollectionBookedEmail.mockResolvedValue("email_booked");
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: { headers: { host: "reborntech.manus.space" }, protocol: "https" }, res: {} } as TrpcContext);
+    await expect(admin.collections.updateStatus({ id: 91, brand: "reborn", status: "confirmed" })).resolves.toMatchObject({ statusEmailsSent: 1 });
+    expect(mocks.sendCollectionBookedEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "client@example.com", collectionReference: "RB-100" }));
+    expect(mocks.recordClientNotification).toHaveBeenCalledWith(expect.objectContaining({ eventType: "collection_booked", deliveryState: "sent", brand: "reborn", jobId: 12 }));
+  });
+
+  it("keeps impact approval and final document completion inside the selected Core Job brand", async () => {
+    mocks.upsertItadJobImpactStatement.mockResolvedValue({ id: 4, jobId: 12, brand: "bulk_gsm", assetsReused: 8, customerVisible: false });
+    mocks.approveItadJobImpactStatement.mockResolvedValue({ id: 4, jobId: 12, brand: "bulk_gsm", customerVisible: true });
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    await expect(admin.itadCore.saveImpactStatement({ jobId: 12, brand: "bulk_gsm", assetsReused: 8, assetsRecycled: 2, assetsRedistributed: 1, materialsRecoveredKg: 14, carbonAvoidedKg: 18, carbonMethodology: "Approved internal methodology", narrative: "Verified device recovery outcomes." })).resolves.toMatchObject({ impactStatement: { brand: "bulk_gsm" } });
+    await expect(admin.itadCore.approveImpactStatement({ jobId: 12, brand: "bulk_gsm" })).resolves.toMatchObject({ impactStatement: { customerVisible: true } });
+    expect(mocks.upsertItadJobImpactStatement).toHaveBeenCalledWith(expect.objectContaining({ jobId: 12, brand: "bulk_gsm", updatedByUserId: 7 }));
+    expect(mocks.approveItadJobImpactStatement).toHaveBeenCalledWith({ jobId: 12, brand: "bulk_gsm", approvedByUserId: 7 });
+  });
+
+  it("notifies the client when an eligible job completes and exposes lifecycle data only to its client session", async () => {
+    mocks.updateItadJobStage.mockResolvedValue({ id: 12, organisationId: 55, brand: "reborn", jobReference: "RB-100", title: "London laptop collection", stage: "completed" });
+    mocks.listAdminCollections.mockResolvedValue([{ job: { id: 12 }, organisation: { id: 55, name: "Example client" } }]);
+    mocks.listActivePortalInvitations.mockResolvedValue([{ id: 7, email: "client@example.com", status: "claimed", token: "token" }]);
+    mocks.sendJobCompletedEmail.mockResolvedValue("email_complete");
+    mocks.listClientPortalJobLifecycle.mockResolvedValue([{ job: { id: 12, brand: "reborn", stage: "completed" }, collection: { id: 91, brand: "reborn" } }]);
+    mocks.listClientPortalImpactStatements.mockResolvedValue([{ impact: { id: 4, customerVisible: true }, job: { id: 12, brand: "reborn" } }]);
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: { headers: { host: "reborntech.manus.space" }, protocol: "https" }, res: {} } as TrpcContext);
+    await expect(admin.itadCore.updateStage({ jobId: 12, brand: "reborn", stage: "completed" })).resolves.toMatchObject({ completionEmailsSent: 1 });
+    expect(mocks.sendJobCompletedEmail).toHaveBeenCalledWith(expect.objectContaining({ jobReference: "RB-100", to: "client@example.com" }));
+    expect(mocks.recordClientNotification).toHaveBeenCalledWith(expect.objectContaining({ eventType: "job_completed", deliveryState: "sent", jobId: 12, brand: "reborn" }));
+
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    await expect(client.clientPortal.lifecycle()).resolves.toHaveLength(1);
+    await expect(client.clientPortal.impactStatements()).resolves.toHaveLength(1);
+    expect(mocks.listClientPortalJobLifecycle).toHaveBeenCalledWith(55, "reborn");
+    expect(mocks.listClientPortalImpactStatements).toHaveBeenCalledWith(55, "reborn");
+  });
+
+  it("retains booked and completed milestone email failures without blocking the route or Core Job transition", async () => {
+    mocks.updateCollectionStatus.mockResolvedValue({ collection: { id: 91, jobId: 12, reference: "RB-100", title: "London laptop collection", scheduledFor: null }, organisation: { id: 55, name: "Example client" } });
+    mocks.updateItadJobStage.mockResolvedValue({ id: 12, organisationId: 55, brand: "reborn", jobReference: "RB-100", title: "London laptop collection", stage: "completed" });
+    mocks.listAdminCollections.mockResolvedValue([{ job: { id: 12 }, organisation: { id: 55, name: "Example client" } }]);
+    mocks.listActivePortalInvitations.mockResolvedValue([{ id: 7, email: "client@example.com", status: "claimed", token: "token" }]);
+    mocks.sendCollectionBookedEmail.mockRejectedValue(new Error("Resend unavailable"));
+    mocks.sendJobCompletedEmail.mockRejectedValue(new Error("Resend unavailable"));
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: { headers: { host: "reborntech.manus.space" }, protocol: "https" }, res: {} } as TrpcContext);
+    await expect(admin.collections.updateStatus({ id: 91, brand: "reborn", status: "confirmed" })).resolves.toMatchObject({ statusEmailsSent: 0 });
+    await expect(admin.itadCore.updateStage({ jobId: 12, brand: "reborn", stage: "completed" })).resolves.toMatchObject({ completionEmailsSent: 0 });
+    expect(mocks.recordClientNotification).toHaveBeenCalledWith(expect.objectContaining({ eventType: "collection_booked", deliveryState: "failed", brand: "reborn" }));
+    expect(mocks.recordClientNotification).toHaveBeenCalledWith(expect.objectContaining({ eventType: "job_completed", deliveryState: "failed", brand: "reborn" }));
   });
 });

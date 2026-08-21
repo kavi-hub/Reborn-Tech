@@ -39,6 +39,17 @@ export async function sendCollectionStatusEmail(input: { to: string; organisatio
   return sendEmail({ to: input.to, subject: `Collection update: ${input.collectionReference} is now ${input.statusLabel}`, html, text: `${input.collectionReference} — ${input.collectionTitle} is now ${input.statusLabel}. Sign in to your client dashboard: ${input.portalUrl}` });
 }
 
+export async function sendCollectionBookedEmail(input: { to: string; organisationName: string; collectionReference: string; collectionTitle: string; scheduledFor?: Date | null; portalUrl: string }) {
+  const date = input.scheduledFor ? input.scheduledFor.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" }) : "the agreed collection date";
+  const html = shell("Your collection is booked.", `<p style="font-size:16px;line-height:1.6"><strong>${escapeHtml(input.collectionReference)}</strong> — ${escapeHtml(input.collectionTitle)} has been booked for <strong>${escapeHtml(date)}</strong>.</p><p style="margin:28px 0"><a href="${escapeHtml(input.portalUrl)}" style="display:inline-block;background:#c9f14a;color:#182019;padding:14px 18px;text-decoration:none;font-weight:700">Open client dashboard →</a></p><p style="font-size:13px;line-height:1.6;color:#586058">Your dashboard holds the live collection route, customer-approved documents and future milestones.</p>`);
+  return sendEmail({ to: input.to, subject: `Collection booked: ${input.collectionReference}`, html, text: `${input.collectionReference} — ${input.collectionTitle} has been booked for ${date}. Open your client dashboard: ${input.portalUrl}` });
+}
+
+export async function sendJobCompletedEmail(input: { to: string; organisationName: string; jobReference: string; jobTitle: string; portalUrl: string }) {
+  const html = shell("Your ITAD job is complete.", `<p style="font-size:16px;line-height:1.6"><strong>${escapeHtml(input.jobReference)}</strong> — ${escapeHtml(input.jobTitle)} is complete. Your approved Securaze evidence, destruction certificate and impact statement are ready in the client dashboard.</p><p style="margin:28px 0"><a href="${escapeHtml(input.portalUrl)}" style="display:inline-block;background:#c9f14a;color:#182019;padding:14px 18px;text-decoration:none;font-weight:700">View issued documents →</a></p><p style="font-size:13px;line-height:1.6;color:#586058">This notification confirms document release, not any commercial valuation or recovery outcome.</p>`);
+  return sendEmail({ to: input.to, subject: `ITAD job complete: ${input.jobReference}`, html, text: `${input.jobReference} — ${input.jobTitle} is complete. Approved Securaze evidence, destruction certificate and impact statement are available in your client dashboard: ${input.portalUrl}` });
+}
+
 export async function sendExceptionLifecycleEmail(input: { to: string; recipientName: string; jobReference: string; exceptionTitle: string; event: "assigned" | "resolved"; workspaceLabel: string; operationsUrl: string }) {
   const recipient = escapeHtml(input.recipientName);
   const reference = escapeHtml(input.jobReference);

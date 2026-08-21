@@ -3,12 +3,14 @@ import { TRPCError } from "@trpc/server";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { activateClientPortalAccount, approveItadJobEvidence, assignCustomerViewerByOrganisationAdmin, bulkReassignItadJobExceptions, claimCustomerPortalInvitation, createAssessmentRequest, createClientPasswordResetToken, createCollectionAttachment, createCollectionAuditEvent, createCollectionTrack, createCustomerPortalInvitation, createItadJobAsset, createItadJobAssetsFromImport, createItadJobComment, createItadJobEvidenceRecord, createItadJobException, createSecurazeImportBatch, createSecurazeImportExceptions, deleteCollectionAttachment, deleteAssessmentRequest, exportAssessmentRequests, findOperationsAdminByEmail, getActiveClientPortalAccountForSession, getAdminCollectionAttachment, getBrandSupportContact, getClientAccountActivationInvitation, getClientPortalAccountByEmail, getClientPortalAccountById, getClientPortalAccountForBrand, getClientPortalAttachment, getClientPortalCoreEvidence, getCustomerCollectionAttachment, getCustomerOrganisationMembership, getItadJobDetail, getItadJobEvidenceFile, getItadJobExceptionKpis, getOperationsUserById, getPortalInvitation, listActivePortalInvitations, listAdminCollectionAttachments, listAdminCollectionAuditEvents, listAdminCollections, listAssessmentRequests, listClientPortalAccountActivity, listClientPortalAccounts, listClientPortalAttachments, listClientPortalAuditEvents, listClientPortalCollections, listClientPortalCoreEvidence, listCollectionIdsForOrganisation, listCustomerCollectionAttachments, listCustomerCollectionAuditEvents, listCustomerPortalCollections, listOperationsAdmins, listOrganisationPortalInvitations, listSecurazeImportExceptions, recordClientPortalSignIn, recordPortalInvitationEmail, recordPortalInvitationEmailFailure, resetClientPortalPassword, revokePortalInvitation, setClientPortalAccountStatus, updateAssessmentStatus, updateCollectionStatus, updateItadJobException, upsertBrandSupportContact } from "./db";
+import { approveItadJobImpactStatement, listClientPortalImpactStatements, listClientPortalJobLifecycle, recordClientNotification, updateItadJobStage, upsertItadJobImpactStatement } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, clientPortalProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { notifyOwner } from "./_core/notification";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { sendClientPasswordResetEmail, sendCollectionStatusEmail, sendExceptionLifecycleEmail, sendPortalInvitationEmail } from "./rebornEmail";
+import { sendCollectionBookedEmail, sendJobCompletedEmail } from "./rebornEmail";
 import { mapSecurazeCsv } from "./securazeCsv";
 import { createSecurazePreviewReceipt, securazeFileHash, verifySecurazePreviewReceipt } from "./securazePreview";
 import { clearClientPortalSession, hashClientPassword, setClientPortalSession, verifyClientPassword } from "./clientPortalAuth";
@@ -22,13 +24,15 @@ const publicOrigin = (req: { headers?: Record<string, string | string[] | undefi
   return "https://www.rebornltd.co.uk";
 };
 
-async function deliverInvitation(input: { invitation: { id: number; email: string; token: string; expiresAt: Date }; organisationName: string; origin: string; resend: boolean }) {
+async function deliverInvitation(input: { invitation: { id: number; email: string; token: string; expiresAt: Date }; organisationId: number; brand: "reborn" | "bulk_gsm"; organisationName: string; origin: string; resend: boolean }) {
   try {
     const emailId = await sendPortalInvitationEmail({ to: input.invitation.email, organisationName: input.organisationName, portalUrl: `${input.origin}/login?invite=${input.invitation.token}`, expiresAt: input.invitation.expiresAt, resend: input.resend });
     await recordPortalInvitationEmail(input.invitation.id, emailId, input.resend);
+    await recordClientNotification({ organisationId: input.organisationId, brand: input.brand, recipientEmail: input.invitation.email, eventType: "onboarding", deliveryState: "sent", emailId, invitationId: input.invitation.id });
     return { delivered: true } as const;
   } catch (error) {
     await recordPortalInvitationEmailFailure(input.invitation.id);
+    try { await recordClientNotification({ organisationId: input.organisationId, brand: input.brand, recipientEmail: input.invitation.email, eventType: "onboarding", deliveryState: "failed", invitationId: input.invitation.id }); } catch (recordError) { console.error("[Notification] Onboarding failure could not be recorded", recordError); }
     console.error("[Email] Invitation delivery failed", error);
     return { delivered: false } as const;
   }
@@ -86,12 +90,25 @@ const coreEvidenceSchema = z.object({
   jobId: z.number().int().positive(),
   assetId: z.number().int().positive().optional(),
   brand: itadBrandSchema,
-  evidenceType: z.enum(["data_erasure", "collection_manifest", "reuse_outcome", "recycling_outcome", "other"]),
+  evidenceType: z.enum(["securaze_report", "destruction_certificate", "impact_statement", "data_erasure", "collection_manifest", "reuse_outcome", "recycling_outcome", "other"]),
   certificateReference: z.string().trim().max(180).optional(),
   issuer: z.string().trim().max(180).optional(),
   verificationState: z.enum(["recorded", "reviewed", "verified", "exception"]).default("recorded"),
   evidenceDate: z.coerce.date().optional(),
   file: coreFileSchema.optional(),
+});
+const impactStatementSchema = z.object({
+  jobId: z.number().int().positive(),
+  brand: itadBrandSchema,
+  assetsReused: z.number().int().min(0).max(1_000_000).default(0),
+  assetsRecycled: z.number().int().min(0).max(1_000_000).default(0),
+  assetsRedistributed: z.number().int().min(0).max(1_000_000).default(0),
+  materialsRecoveredKg: z.number().int().min(0).max(10_000_000).default(0),
+  carbonAvoidedKg: z.number().int().min(0).max(10_000_000).nullable().optional(),
+  carbonMethodology: z.string().trim().max(255).nullable().optional(),
+  narrative: z.string().trim().max(3_000).nullable().optional(),
+}).superRefine((input, ctx) => {
+  if (input.carbonAvoidedKg !== null && input.carbonAvoidedKg !== undefined && !input.carbonMethodology?.trim()) ctx.addIssue({ code: "custom", path: ["carbonMethodology"], message: "State the verified methodology before releasing a carbon outcome" });
 });
 const securazeImportSchema = z.object({
   jobId: z.number().int().positive(),
@@ -201,6 +218,8 @@ export const appRouter = router({
     attachments: clientPortalProcedure.query(({ ctx }) => listClientPortalAttachments(ctx.clientSession.organisationId, ctx.clientSession.brand)),
     auditEvents: clientPortalProcedure.input(z.object({ page: z.number().int().positive().default(1), pageSize: z.number().int().min(1).max(50).default(10) })).query(({ ctx, input }) => listClientPortalAuditEvents(ctx.clientSession.organisationId, ctx.clientSession.brand, input.page, input.pageSize)),
     coreEvidence: clientPortalProcedure.query(({ ctx }) => listClientPortalCoreEvidence(ctx.clientSession.organisationId, ctx.clientSession.brand)),
+    lifecycle: clientPortalProcedure.query(({ ctx }) => listClientPortalJobLifecycle(ctx.clientSession.organisationId, ctx.clientSession.brand)),
+    impactStatements: clientPortalProcedure.query(({ ctx }) => listClientPortalImpactStatements(ctx.clientSession.organisationId, ctx.clientSession.brand)),
     supportContact: clientPortalProcedure.query(({ ctx }) => getBrandSupportContact(ctx.clientSession.brand)),
     downloadAttachment: clientPortalProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const attachment = await getClientPortalAttachment(ctx.clientSession.organisationId, ctx.clientSession.brand, input.attachmentId);
@@ -276,6 +295,26 @@ export const appRouter = router({
     detail: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema })).query(({ input }) => getItadJobDetail(input.jobId, input.brand)),
     exceptionKpis: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema })).query(({ input }) => getItadJobExceptionKpis(input.jobId, input.brand)),
     operationsAdmins: adminProcedure.query(() => listOperationsAdmins()),
+    updateStage: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema, stage: z.enum(["intake", "planned_collection", "received", "processing", "exceptions", "evidence_review", "client_published", "completed"]) })).mutation(async ({ ctx, input }) => {
+      const job = await updateItadJobStage({ ...input, actorUserId: ctx.user.id });
+      if (input.stage !== "completed") return { job, completionEmailsSent: 0 };
+      const organisation = (await listAdminCollections(input.brand)).find((route) => route.job?.id === input.jobId)?.organisation;
+      if (!organisation) return { job, completionEmailsSent: 0 };
+      const invitations = await listActivePortalInvitations(organisation.id, input.brand);
+      const origin = publicOrigin(ctx.req);
+      const results = await Promise.all(invitations.map(async (invitation) => {
+        try {
+          const emailId = await sendJobCompletedEmail({ to: invitation.email, organisationName: organisation.name, jobReference: job.jobReference, jobTitle: job.title, portalUrl: `${origin}/login` });
+          await recordClientNotification({ organisationId: organisation.id, brand: input.brand, recipientEmail: invitation.email, eventType: "job_completed", deliveryState: "sent", emailId, jobId: input.jobId, invitationId: invitation.id, actorUserId: ctx.user.id });
+          return true;
+        } catch (error) {
+          console.error("[Email] Job completion notification failed", error);
+          try { await recordClientNotification({ organisationId: organisation.id, brand: input.brand, recipientEmail: invitation.email, eventType: "job_completed", deliveryState: "failed", jobId: input.jobId, invitationId: invitation.id, actorUserId: ctx.user.id }); } catch (recordError) { console.error("[Notification] Job completion failure could not be recorded", recordError); }
+          return false;
+        }
+      }));
+      return { job, completionEmailsSent: results.filter(Boolean).length };
+    }),
     securazeTemplate: adminProcedure.query(() => ({ fileName: "securaze-itad-import-template.csv", acceptedHeaders: ["Serial Number", "Result", "Device Type", "Manufacturer", "Model", "Asset Tag"], csv: "\uFEFFSerial Number,Result,Device Type,Manufacturer,Model,Asset Tag\r\nEXAMPLE-123,Completed,Laptop,Example Manufacturer,Example Model,ASSET-001\r\n" })),
     addAsset: adminProcedure.input(coreAssetSchema).mutation(async ({ input }) => {
       const asset = await createItadJobAsset(input);
@@ -332,6 +371,8 @@ export const appRouter = router({
       return { importBatch };
     }),
     approveEvidence: adminProcedure.input(z.object({ evidenceId: z.number().int().positive(), jobId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ ctx, input }) => ({ evidence: await approveItadJobEvidence({ ...input, approvedByUserId: ctx.user.id }) })),
+    saveImpactStatement: adminProcedure.input(impactStatementSchema).mutation(async ({ ctx, input }) => ({ impactStatement: await upsertItadJobImpactStatement({ ...input, updatedByUserId: ctx.user.id }) })),
+    approveImpactStatement: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ ctx, input }) => ({ impactStatement: await approveItadJobImpactStatement({ ...input, approvedByUserId: ctx.user.id }) })),
     addComment: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema, comment: z.string().trim().min(2).max(3_000) })).mutation(async ({ ctx, input }) => { await createItadJobComment({ ...input, createdByUserId: ctx.user.id }); return { success: true } as const; }),
     exportSecurazeExceptions: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema, importBatchId: z.number().int().positive().optional() })).mutation(async ({ input }) => {
       const rows = await listSecurazeImportExceptions(input);
@@ -391,11 +432,21 @@ export const appRouter = router({
     updateStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: collectionStatusSchema, brand: z.enum(["reborn", "bulk_gsm"]).default("reborn") })).mutation(async ({ ctx, input }) => {
       const route = await updateCollectionStatus(input.id, input.status, input.brand);
       await createCollectionAuditEvent({ collectionId: input.id, eventType: "status_changed", summary: `Collection status changed to ${input.status.replaceAll("_", " ")}`, customerVisible: true, actorUserId: ctx.user.id });
+      if (input.status !== "confirmed") return { success: true, statusEmailsSent: 0 };
       const invitations = await listActivePortalInvitations(route.organisation.id, input.brand);
       const origin = publicOrigin(ctx.req);
-      const statusLabel = input.status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-      const deliveries = await Promise.allSettled(invitations.map((invitation) => sendCollectionStatusEmail({ to: invitation.email, organisationName: route.organisation.name, collectionReference: route.collection.reference, collectionTitle: route.collection.title, statusLabel, portalUrl: invitation.status === "pending" ? `${origin}/login?invite=${invitation.token}` : `${origin}/login` })));
-      return { success: true, statusEmailsSent: deliveries.filter((result) => result.status === "fulfilled").length } as const;
+      const deliveries = await Promise.all(invitations.map(async (invitation) => {
+        try {
+          const emailId = await sendCollectionBookedEmail({ to: invitation.email, organisationName: route.organisation.name, collectionReference: route.collection.reference, collectionTitle: route.collection.title, scheduledFor: route.collection.scheduledFor, portalUrl: invitation.status === "pending" ? `${origin}/login?invite=${invitation.token}` : `${origin}/login` });
+          await recordClientNotification({ organisationId: route.organisation.id, brand: input.brand, recipientEmail: invitation.email, eventType: "collection_booked", deliveryState: "sent", emailId, collectionId: route.collection.id, jobId: route.collection.jobId, invitationId: invitation.id, actorUserId: ctx.user.id });
+          return true;
+        } catch (error) {
+          console.error("[Email] Collection booked notification failed", error);
+          try { await recordClientNotification({ organisationId: route.organisation.id, brand: input.brand, recipientEmail: invitation.email, eventType: "collection_booked", deliveryState: "failed", collectionId: route.collection.id, jobId: route.collection.jobId, invitationId: invitation.id, actorUserId: ctx.user.id }); } catch (recordError) { console.error("[Notification] Collection booked failure could not be recorded", recordError); }
+          return false;
+        }
+      }));
+      return { success: true, statusEmailsSent: deliveries.filter(Boolean).length };
     }),
     createInvitation: adminProcedure.input(z.object({
       organisationId: z.number().int().positive(),
@@ -409,7 +460,7 @@ export const appRouter = router({
       const collectionIds = await listCollectionIdsForOrganisation(input.organisationId, input.brand);
       await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "invitation_sent", summary: `Customer portal invitation created for ${input.role} access`, customerVisible: false, actorUserId: ctx.user.id })));
       const organisation = (await listAdminCollections(input.brand)).find((route) => route.organisation.id === input.organisationId)?.organisation;
-      const delivery = organisation ? await deliverInvitation({ invitation, organisationName: organisation.name, origin: publicOrigin(ctx.req), resend: false }) : { delivered: false };
+      const delivery = organisation ? await deliverInvitation({ invitation, organisationId: input.organisationId, brand: input.brand, organisationName: organisation.name, origin: publicOrigin(ctx.req), resend: false }) : { delivered: false };
       return { token, expiresAt, invitationId: invitation.id, ...delivery };
     }),
     listInvitations: adminProcedure.input(z.object({ organisationId: z.number().int().positive(), brand: z.enum(["reborn", "bulk_gsm"]).default("reborn") })).query(({ input }) => listOrganisationPortalInvitations(input.organisationId, input.brand)),
@@ -419,7 +470,7 @@ export const appRouter = router({
       if (invitation.status === "revoked" || invitation.status === "expired") throw new TRPCError({ code: "BAD_REQUEST", message: "Create a new invitation for a revoked or expired access link" });
       const organisation = (await listAdminCollections(invitation.brand)).find((route) => route.organisation.id === invitation.organisationId)?.organisation;
       if (!organisation) throw new TRPCError({ code: "NOT_FOUND", message: "Customer organisation could not be found" });
-      const delivery = await deliverInvitation({ invitation, organisationName: organisation.name, origin: publicOrigin(ctx.req), resend: true });
+      const delivery = await deliverInvitation({ invitation, organisationId: invitation.organisationId, brand: invitation.brand, organisationName: organisation.name, origin: publicOrigin(ctx.req), resend: true });
       const collectionIds = await listCollectionIdsForOrganisation(invitation.organisationId, invitation.brand);
       await Promise.all(collectionIds.map(({ id }) => createCollectionAuditEvent({ collectionId: id, eventType: "invitation_sent", summary: "Customer portal invitation resent", customerVisible: false, actorUserId: ctx.user.id })));
       return delivery;

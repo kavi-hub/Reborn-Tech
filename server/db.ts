@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createHash, randomBytes } from "node:crypto";
-import { assessmentRequests, brandSupportContacts, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
+import { assessmentRequests, brandSupportContacts, clientNotificationEvents, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImpactStatements, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DEFAULT_ITAD_BRAND, type ItadBrand, type ItadJobStage } from "../shared/itadCore";
 import { calculateCoreJobExceptionKpis } from "../shared/coreJobKpis";
@@ -412,18 +412,19 @@ export async function getItadJobDetail(jobId: number, brand: ItadBrand = DEFAULT
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
   const job = await getItadJobForBrand(jobId, brand);
-  const [assets, evidence, importBatches, comments, exceptions, activity] = await Promise.all([
+  const [assets, evidence, importBatches, comments, exceptions, activity, impactStatements] = await Promise.all([
     db.select().from(itadJobAssets).where(and(eq(itadJobAssets.jobId, jobId), eq(itadJobAssets.brand, brand))).orderBy(desc(itadJobAssets.createdAt)),
     db.select().from(itadJobEvidenceRecords).where(and(eq(itadJobEvidenceRecords.jobId, jobId), eq(itadJobEvidenceRecords.brand, brand))).orderBy(desc(itadJobEvidenceRecords.createdAt)),
     db.select().from(itadJobImportBatches).where(and(eq(itadJobImportBatches.jobId, jobId), eq(itadJobImportBatches.brand, brand))).orderBy(desc(itadJobImportBatches.importedAt)),
     db.select().from(itadJobComments).where(and(eq(itadJobComments.jobId, jobId), eq(itadJobComments.brand, brand))).orderBy(desc(itadJobComments.createdAt)),
     db.select().from(itadJobExceptions).where(and(eq(itadJobExceptions.jobId, jobId), eq(itadJobExceptions.brand, brand))).orderBy(desc(itadJobExceptions.updatedAt)),
     db.select().from(itadJobActivityEvents).where(and(eq(itadJobActivityEvents.jobId, jobId), eq(itadJobActivityEvents.brand, brand))).orderBy(desc(itadJobActivityEvents.createdAt)).limit(30),
+    db.select().from(itadJobImpactStatements).where(and(eq(itadJobImpactStatements.jobId, jobId), eq(itadJobImpactStatements.brand, brand))).orderBy(desc(itadJobImpactStatements.updatedAt)).limit(1),
   ]);
   const operatorIds = Array.from(new Set([...comments.map((row) => row.createdByUserId), ...activity.map((row) => row.actorUserId), ...exceptions.flatMap((row) => [row.createdByUserId, row.ownerUserId, row.resolvedByUserId].filter((id): id is number => typeof id === "number"))]));
   const operators = operatorIds.length ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, operatorIds)) : [];
   const operatorNames = new Map(operators.map((operator) => [operator.id, operator.name || operator.email || `Operator #${operator.id}`]));
-  return { job, assets, evidence, importBatches, comments: comments.map((row) => ({ ...row, actorName: operatorNames.get(row.createdByUserId) || `Operator #${row.createdByUserId}` })), exceptions: exceptions.map((row) => ({ ...row, ownerName: row.ownerUserId ? operatorNames.get(row.ownerUserId) || `Operator #${row.ownerUserId}` : "Unassigned" })), activity: activity.map((row) => ({ ...row, actorName: operatorNames.get(row.actorUserId) || `Operator #${row.actorUserId}` })) };
+  return { job, assets, evidence, importBatches, impactStatement: impactStatements[0] ?? null, comments: comments.map((row) => ({ ...row, actorName: operatorNames.get(row.createdByUserId) || `Operator #${row.createdByUserId}` })), exceptions: exceptions.map((row) => ({ ...row, ownerName: row.ownerUserId ? operatorNames.get(row.ownerUserId) || `Operator #${row.ownerUserId}` : "Unassigned" })), activity: activity.map((row) => ({ ...row, actorName: operatorNames.get(row.actorUserId) || `Operator #${row.actorUserId}` })) };
 }
 
 export async function getItadJobExceptionKpis(jobId: number, brand: ItadBrand = DEFAULT_ITAD_BRAND) {
@@ -491,7 +492,7 @@ export async function listOperationsAdmins() {
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(eq(users.role, "admin")).orderBy(asc(users.name), asc(users.email));
 }
 
-export async function createItadJobEvidenceRecord(input: { jobId: number; assetId?: number; brand: ItadBrand; evidenceType: "data_erasure" | "collection_manifest" | "reuse_outcome" | "recycling_outcome" | "other"; certificateReference?: string; issuer?: string; verificationState: "recorded" | "reviewed" | "verified" | "exception"; evidenceDate?: Date; fileName?: string; contentType?: string; sizeBytes?: number; storageKey?: string; customerVisible: boolean; createdByUserId: number }) {
+export async function createItadJobEvidenceRecord(input: { jobId: number; assetId?: number; brand: ItadBrand; evidenceType: "securaze_report" | "destruction_certificate" | "impact_statement" | "data_erasure" | "collection_manifest" | "reuse_outcome" | "recycling_outcome" | "other"; certificateReference?: string; issuer?: string; verificationState: "recorded" | "reviewed" | "verified" | "exception"; evidenceDate?: Date; fileName?: string; contentType?: string; sizeBytes?: number; storageKey?: string; customerVisible: boolean; createdByUserId: number }) {
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
   await getItadJobForBrand(input.jobId, input.brand);
@@ -515,7 +516,7 @@ export async function createSecurazeImportBatch(input: { jobId: number; brand: I
   return created[0];
 }
 
-async function createItadJobActivityEvent(input: { jobId: number; brand: ItadBrand; eventType: "comment_added" | "exception_opened" | "exception_updated" | "exception_resolved" | "evidence_approved" | "securaze_imported"; summary: string; actorUserId: number }) {
+async function createItadJobActivityEvent(input: { jobId: number; brand: ItadBrand; eventType: "comment_added" | "exception_opened" | "exception_updated" | "exception_resolved" | "evidence_approved" | "securaze_imported" | "stage_changed" | "impact_updated" | "impact_approved" | "client_notification"; summary: string; actorUserId: number }) {
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
   await db.insert(itadJobActivityEvents).values(input);
@@ -531,6 +532,62 @@ export async function approveItadJobEvidence(input: { evidenceId: number; jobId:
   await db.update(itadJobEvidenceRecords).set({ customerVisible: true, customerApprovedAt: approvedAt, customerApprovedByUserId: input.approvedByUserId }).where(eq(itadJobEvidenceRecords.id, input.evidenceId));
   await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: "evidence_approved", summary: `Customer portal approval recorded for ${evidence[0].fileName}`, actorUserId: input.approvedByUserId });
   return { ...evidence[0], customerVisible: true, customerApprovedAt: approvedAt, customerApprovedByUserId: input.approvedByUserId };
+}
+
+export async function updateItadJobStage(input: { jobId: number; brand: ItadBrand; stage: ItadJobStage; actorUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const job = await getItadJobForBrand(input.jobId, input.brand);
+  if (input.stage === "completed") {
+    const [documents, impact] = await Promise.all([
+      db.select({ evidenceType: itadJobEvidenceRecords.evidenceType }).from(itadJobEvidenceRecords).where(and(eq(itadJobEvidenceRecords.jobId, input.jobId), eq(itadJobEvidenceRecords.brand, input.brand), eq(itadJobEvidenceRecords.customerVisible, true), isNotNull(itadJobEvidenceRecords.customerApprovedAt))),
+      db.select().from(itadJobImpactStatements).where(and(eq(itadJobImpactStatements.jobId, input.jobId), eq(itadJobImpactStatements.brand, input.brand), eq(itadJobImpactStatements.customerVisible, true), isNotNull(itadJobImpactStatements.customerApprovedAt))).limit(1),
+    ]);
+    const issuedTypes = new Set(documents.map((document) => document.evidenceType));
+    if (!issuedTypes.has("securaze_report") || !issuedTypes.has("destruction_certificate") || !impact[0]) {
+      throw new Error("Complete this job only after approved Securaze evidence, a destruction certificate and an approved impact statement are released to the client");
+    }
+  }
+  const completed = input.stage === "completed";
+  await db.update(itadJobs).set({ stage: input.stage, completedAt: completed ? new Date() : null, completedByUserId: completed ? input.actorUserId : null }).where(and(eq(itadJobs.id, input.jobId), eq(itadJobs.brand, input.brand)));
+  await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: "stage_changed", summary: `Job stage changed from ${job.stage.replaceAll("_", " ")} to ${input.stage.replaceAll("_", " ")}`, actorUserId: input.actorUserId });
+  return { ...job, stage: input.stage, completedAt: completed ? new Date() : null, completedByUserId: completed ? input.actorUserId : null };
+}
+
+export async function upsertItadJobImpactStatement(input: { jobId: number; brand: ItadBrand; assetsReused: number; assetsRecycled: number; assetsRedistributed: number; materialsRecoveredKg: number; carbonAvoidedKg?: number | null; carbonMethodology?: string | null; narrative?: string | null; updatedByUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  await getItadJobForBrand(input.jobId, input.brand);
+  const existing = await db.select().from(itadJobImpactStatements).where(and(eq(itadJobImpactStatements.jobId, input.jobId), eq(itadJobImpactStatements.brand, input.brand))).orderBy(desc(itadJobImpactStatements.updatedAt)).limit(1);
+  const values = { ...input, carbonAvoidedKg: input.carbonAvoidedKg ?? null, carbonMethodology: input.carbonMethodology || null, narrative: input.narrative || null, customerVisible: false, customerApprovedAt: null, customerApprovedByUserId: null };
+  if (existing[0]) {
+    await db.update(itadJobImpactStatements).set(values).where(eq(itadJobImpactStatements.id, existing[0].id));
+  } else {
+    await db.insert(itadJobImpactStatements).values(values);
+  }
+  const statement = await db.select().from(itadJobImpactStatements).where(and(eq(itadJobImpactStatements.jobId, input.jobId), eq(itadJobImpactStatements.brand, input.brand))).orderBy(desc(itadJobImpactStatements.updatedAt)).limit(1);
+  if (!statement[0]) throw new Error("Impact statement could not be saved");
+  await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: "impact_updated", summary: "Privacy-safe impact statement updated for internal review", actorUserId: input.updatedByUserId });
+  return statement[0];
+}
+
+export async function approveItadJobImpactStatement(input: { jobId: number; brand: ItadBrand; approvedByUserId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const statement = await db.select().from(itadJobImpactStatements).where(and(eq(itadJobImpactStatements.jobId, input.jobId), eq(itadJobImpactStatements.brand, input.brand))).orderBy(desc(itadJobImpactStatements.updatedAt)).limit(1);
+  if (!statement[0]) throw new Error("Create an impact statement before approving it for the client");
+  if (statement[0].carbonAvoidedKg !== null && !statement[0].carbonMethodology) throw new Error("Add a carbon methodology before releasing a carbon outcome");
+  const approvedAt = new Date();
+  await db.update(itadJobImpactStatements).set({ customerVisible: true, customerApprovedAt: approvedAt, customerApprovedByUserId: input.approvedByUserId }).where(eq(itadJobImpactStatements.id, statement[0].id));
+  await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: "impact_approved", summary: "Impact statement approved for client dashboard", actorUserId: input.approvedByUserId });
+  return { ...statement[0], customerVisible: true, customerApprovedAt: approvedAt, customerApprovedByUserId: input.approvedByUserId };
+}
+
+export async function recordClientNotification(input: { organisationId: number; brand: ItadBrand; recipientEmail: string; eventType: "onboarding" | "collection_booked" | "job_completed"; deliveryState: "sent" | "failed" | "skipped"; collectionId?: number | null; jobId?: number | null; invitationId?: number | null; emailId?: string | null; actorUserId?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Client notification storage is temporarily unavailable");
+  await db.insert(clientNotificationEvents).values({ ...input, collectionId: input.collectionId ?? null, jobId: input.jobId ?? null, invitationId: input.invitationId ?? null, emailId: input.emailId ?? null, recipientEmail: input.recipientEmail.toLowerCase() });
+  if (input.jobId && input.actorUserId) await createItadJobActivityEvent({ jobId: input.jobId, brand: input.brand, eventType: "client_notification", summary: `Client ${input.eventType.replaceAll("_", " ")} email ${input.deliveryState}`, actorUserId: input.actorUserId });
 }
 
 export async function createItadJobComment(input: { jobId: number; brand: ItadBrand; comment: string; createdByUserId: number }) {
@@ -815,6 +872,24 @@ export async function getClientPortalCoreEvidence(organisationId: number, brand:
     .where(and(eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(itadJobEvidenceRecords.brand, brand), eq(itadJobEvidenceRecords.id, evidenceId), eq(itadJobEvidenceRecords.customerVisible, true), isNotNull(itadJobEvidenceRecords.customerApprovedAt))).limit(1);
   if (!evidence[0]?.evidence.storageKey || !evidence[0].evidence.fileName) throw new Error("This Core evidence file is not available through your client account");
   return evidence[0].evidence;
+}
+
+export async function listClientPortalImpactStatements(organisationId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  return db.select({ impact: itadJobImpactStatements, job: itadJobs }).from(itadJobs)
+    .innerJoin(itadJobImpactStatements, eq(itadJobImpactStatements.jobId, itadJobs.id))
+    .where(and(eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(itadJobImpactStatements.brand, brand), eq(itadJobImpactStatements.customerVisible, true), isNotNull(itadJobImpactStatements.customerApprovedAt)))
+    .orderBy(desc(itadJobImpactStatements.customerApprovedAt));
+}
+
+export async function listClientPortalJobLifecycle(organisationId: number, brand: ItadBrand) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  return db.select({ job: itadJobs, collection: collectionTracks }).from(itadJobs)
+    .leftJoin(collectionTracks, eq(collectionTracks.jobId, itadJobs.id))
+    .where(and(eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(collectionTracks.brand, brand)))
+    .orderBy(desc(itadJobs.updatedAt));
 }
 
 async function getActivePortalInvitation(token: string) {

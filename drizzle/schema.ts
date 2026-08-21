@@ -160,6 +160,8 @@ export const itadJobs = mysqlTable("itadJobs", {
   stage: mysqlEnum("stage", ["intake", "planned_collection", "received", "processing", "exceptions", "evidence_review", "client_published", "completed"]).default("intake").notNull(),
   estimatedAssetCount: int("estimatedAssetCount"),
   receivedAssetCount: int("receivedAssetCount"),
+  completedAt: timestamp("completedAt"),
+  completedByUserId: int("completedByUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -190,7 +192,7 @@ export const itadJobEvidenceRecords = mysqlTable("itadJobEvidenceRecords", {
   jobId: int("jobId").notNull(),
   assetId: int("assetId"),
   brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
-  evidenceType: mysqlEnum("evidenceType", ["data_erasure", "collection_manifest", "reuse_outcome", "recycling_outcome", "other"]).notNull(),
+  evidenceType: mysqlEnum("evidenceType", ["securaze_report", "destruction_certificate", "impact_statement", "data_erasure", "collection_manifest", "reuse_outcome", "recycling_outcome", "other"]).notNull(),
   certificateReference: varchar("certificateReference", { length: 180 }),
   issuer: varchar("issuer", { length: 180 }),
   verificationState: mysqlEnum("verificationState", ["recorded", "reviewed", "verified", "exception"]).default("recorded").notNull(),
@@ -203,6 +205,41 @@ export const itadJobEvidenceRecords = mysqlTable("itadJobEvidenceRecords", {
   customerApprovedAt: timestamp("customerApprovedAt"),
   customerApprovedByUserId: int("customerApprovedByUserId"),
   createdByUserId: int("createdByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/** Privacy-safe, outcome-only impact data. Commercial value, cost and profit are deliberately excluded. */
+export const itadJobImpactStatements = mysqlTable("itadJobImpactStatements", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  assetsReused: int("assetsReused").default(0).notNull(),
+  assetsRecycled: int("assetsRecycled").default(0).notNull(),
+  assetsRedistributed: int("assetsRedistributed").default(0).notNull(),
+  materialsRecoveredKg: int("materialsRecoveredKg").default(0).notNull(),
+  carbonAvoidedKg: int("carbonAvoidedKg"),
+  carbonMethodology: varchar("carbonMethodology", { length: 255 }),
+  narrative: text("narrative"),
+  customerVisible: boolean("customerVisible").default(false).notNull(),
+  customerApprovedAt: timestamp("customerApprovedAt"),
+  customerApprovedByUserId: int("customerApprovedByUserId"),
+  updatedByUserId: int("updatedByUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Delivery ledger for client-facing lifecycle emails. A failed delivery never blocks the underlying operational action. */
+export const clientNotificationEvents = mysqlTable("clientNotificationEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  organisationId: int("organisationId").notNull(),
+  brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
+  collectionId: int("collectionId"),
+  jobId: int("jobId"),
+  invitationId: int("invitationId"),
+  recipientEmail: varchar("recipientEmail", { length: 320 }).notNull(),
+  eventType: mysqlEnum("eventType", ["onboarding", "collection_booked", "job_completed"]).notNull(),
+  deliveryState: mysqlEnum("deliveryState", ["sent", "failed", "skipped"]).notNull(),
+  emailId: varchar("emailId", { length: 128 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -272,7 +309,7 @@ export const itadJobActivityEvents = mysqlTable("itadJobActivityEvents", {
   id: int("id").autoincrement().primaryKey(),
   jobId: int("jobId").notNull(),
   brand: mysqlEnum("brand", ["reborn", "bulk_gsm"]).notNull(),
-  eventType: mysqlEnum("eventType", ["comment_added", "exception_opened", "exception_updated", "exception_resolved", "evidence_approved", "securaze_imported"]).notNull(),
+  eventType: mysqlEnum("eventType", ["comment_added", "exception_opened", "exception_updated", "exception_resolved", "evidence_approved", "securaze_imported", "stage_changed", "impact_updated", "impact_approved", "client_notification"]).notNull(),
   summary: varchar("summary", { length: 500 }).notNull(),
   actorUserId: int("actorUserId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -310,6 +347,8 @@ export type CollectionTrack = typeof collectionTracks.$inferSelect;
 export type ItadJob = typeof itadJobs.$inferSelect;
 export type ItadJobAsset = typeof itadJobAssets.$inferSelect;
 export type ItadJobEvidenceRecord = typeof itadJobEvidenceRecords.$inferSelect;
+export type ItadJobImpactStatement = typeof itadJobImpactStatements.$inferSelect;
+export type ClientNotificationEvent = typeof clientNotificationEvents.$inferSelect;
 export type ItadJobImportBatch = typeof itadJobImportBatches.$inferSelect;
 export type ItadJobImportException = typeof itadJobImportExceptions.$inferSelect;
 export type ItadJobComment = typeof itadJobComments.$inferSelect;
