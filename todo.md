@@ -225,3 +225,12 @@
 - [x] Add end-to-end regression coverage for brand scope, document release, notification paths and completed-job access.
 - [x] Pre-populate the Operations impact form from the current saved impact statement to prevent accidental zero-value overwrites during review.
 - [x] Add lifecycle regression coverage proving booked and completed jobs retain delivery failures without blocking the operational state change.
+
+## ITAD lifecycle completion documents and progress
+
+- [x] Add a staff-downloadable destruction-certificate template prefilled from the current Core Job without asserting unverified destruction details.
+- [x] Generate a client-downloadable completion-summary PDF only for completed, correctly scoped Core Jobs.
+- [x] Include approved issued documents and verified non-financial outcomes in the completion summary without exposing commercial values.
+- [x] Add a visual lifecycle progress bar and clear current-stage marker to the client dashboard.
+- [x] Add tests for certificate template content, completion-PDF access scope and lifecycle progress states.
+- [x] Extract and unit-test the client lifecycle progress calculation used by the visual stage bar.

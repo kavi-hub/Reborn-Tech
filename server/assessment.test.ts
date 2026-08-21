@@ -90,6 +90,8 @@ const mocks = vi.hoisted(() => ({
   verifyClientPassword: vi.fn(),
   setClientPortalSession: vi.fn(),
   clearClientPortalSession: vi.fn(),
+  createDestructionCertificateTemplatePdf: vi.fn(),
+  createCompletionSummaryPdf: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
@@ -187,6 +189,11 @@ vi.mock("./rebornEmail", () => ({
 vi.mock("./storage", () => ({
   storagePut: mocks.storagePut,
   storageGetSignedUrl: mocks.storageGetSignedUrl,
+}));
+
+vi.mock("./completionPdf", () => ({
+  createDestructionCertificateTemplatePdf: mocks.createDestructionCertificateTemplatePdf,
+  createCompletionSummaryPdf: mocks.createCompletionSummaryPdf,
 }));
 
 vi.mock("./clientPortalAuth", () => ({
@@ -802,5 +809,27 @@ describe("assessment input validation", () => {
     await expect(admin.itadCore.updateStage({ jobId: 12, brand: "reborn", stage: "completed" })).resolves.toMatchObject({ completionEmailsSent: 0 });
     expect(mocks.recordClientNotification).toHaveBeenCalledWith(expect.objectContaining({ eventType: "collection_booked", deliveryState: "failed", brand: "reborn" }));
     expect(mocks.recordClientNotification).toHaveBeenCalledWith(expect.objectContaining({ eventType: "job_completed", deliveryState: "failed", brand: "reborn" }));
+  });
+
+  it("generates a controlled destruction certificate template only from a Core Job in the selected brand workspace", async () => {
+    mocks.getItadJobDetail.mockResolvedValue({ job: { id: 12, jobReference: "RB-100", title: "London laptop collection" }, assets: [{ id: 1 }, { id: 2 }] });
+    mocks.listAdminCollections.mockResolvedValue([{ job: { id: 12 }, collection: { reference: "COL-100" }, organisation: { name: "Example client" } }]);
+    mocks.createDestructionCertificateTemplatePdf.mockResolvedValue("template-pdf");
+    const admin = appRouter.createCaller({ user: { id: 7, role: "admin" }, req: {}, res: {} } as TrpcContext);
+    await expect(admin.itadCore.destructionCertificateTemplate({ jobId: 12, brand: "reborn" })).resolves.toMatchObject({ contentBase64: "template-pdf", fileName: "rb-100-destruction-certificate-template.pdf" });
+    expect(mocks.createDestructionCertificateTemplatePdf).toHaveBeenCalledWith(expect.objectContaining({ brand: "reborn", organisationName: "Example client", assetCount: 2 }));
+  });
+
+  it("issues a completion summary only to the client session that owns a completed Core Job", async () => {
+    mocks.listClientPortalJobLifecycle.mockResolvedValue([{ job: { id: 12, jobReference: "RB-100", title: "London laptop collection", stage: "completed", completedAt: new Date("2026-09-10"), updatedAt: new Date("2026-09-10") }, collection: { id: 91, reference: "COL-100" } }]);
+    mocks.listClientPortalCoreEvidence.mockResolvedValue([{ job: { id: 12 }, evidence: { evidenceType: "securaze_report", certificateReference: "SEC-12", issuer: "Securaze", customerApprovedAt: new Date("2026-09-10") } }]);
+    mocks.listClientPortalImpactStatements.mockResolvedValue([{ job: { id: 12 }, impact: { assetsReused: 2, assetsRecycled: 1, assetsRedistributed: 0, materialsRecoveredKg: 4, carbonAvoidedKg: null, carbonMethodology: null, narrative: null } }]);
+    mocks.listClientPortalCollections.mockResolvedValue([{ organisation: { name: "Example client" }, collection: { id: 91 } }]);
+    mocks.createCompletionSummaryPdf.mockResolvedValue("completion-pdf");
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "reborn", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    await expect(client.clientPortal.downloadCompletionSummary({ jobId: 12 })).resolves.toMatchObject({ contentBase64: "completion-pdf", fileName: "rb-100-completion-summary.pdf" });
+    expect(mocks.createCompletionSummaryPdf).toHaveBeenCalledWith(expect.objectContaining({ brand: "reborn", organisationName: "Example client", documents: [expect.objectContaining({ evidenceType: "securaze_report" })] }));
+    mocks.listClientPortalJobLifecycle.mockResolvedValue([{ job: { id: 12, jobReference: "RB-100", title: "London laptop collection", stage: "processing", completedAt: null, updatedAt: new Date("2026-09-10") }, collection: { id: 91 } }]);
+    await expect(client.clientPortal.downloadCompletionSummary({ jobId: 12 })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

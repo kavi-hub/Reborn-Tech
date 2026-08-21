@@ -5,15 +5,15 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { CollectionAuditTimeline } from "@/components/CollectionAuditTimeline";
 import { SiteFooter, SiteHeader } from "@/components/PublicChrome";
+import { clientJobStageLabels, clientJobStages, getClientJobLifecycleProgress, type ClientJobStage } from "../../../shared/itadLifecycle";
 
 const collectionStages = ["planned", "confirmed", "collected", "processing", "outcome_reported"] as const;
 const collectionLabels: Record<(typeof collectionStages)[number], string> = { planned: "Planned", confirmed: "Booked", collected: "Collected", processing: "Processing", outcome_reported: "Outcome ready" };
-const jobStages = ["intake", "planned_collection", "received", "processing", "exceptions", "evidence_review", "client_published", "completed"] as const;
-const jobLabels: Record<(typeof jobStages)[number], string> = { intake: "Intake", planned_collection: "Collection planned", received: "Received", processing: "Processing", exceptions: "Exception review", evidence_review: "Evidence review", client_published: "Documents issued", completed: "Complete" };
 const documentLabels: Record<string, string> = { securaze_report: "Securaze evidence", destruction_certificate: "Destruction certificate", impact_statement: "Impact statement", data_erasure: "Data erasure evidence", collection_manifest: "Collection manifest", reuse_outcome: "Reuse outcome", recycling_outcome: "Recycling outcome", other: "Issued document" };
 
 const formatBytes = (bytes: number) => bytes < 1_000_000 ? `${Math.max(1, Math.round(bytes / 1_000))} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`;
 const formatDate = (value: Date | null | undefined) => value ? new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : null;
+const downloadPdf = (contentBase64: string, fileName: string) => { const bytes = Uint8Array.from(atob(contentBase64), (character) => character.charCodeAt(0)); const href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })); const anchor = document.createElement("a"); anchor.href = href; anchor.download = fileName; anchor.click(); URL.revokeObjectURL(href); };
 
 export default function ClientDashboard() {
   const [, setLocation] = useLocation();
@@ -29,6 +29,7 @@ export default function ClientDashboard() {
   const logout = trpc.clientAuth.logout.useMutation({ onSuccess: () => setLocation("/login") });
   const downloadAttachment = trpc.clientPortal.downloadAttachment.useMutation({ onSuccess: ({ url }) => window.open(url, "_blank", "noopener,noreferrer"), onError: (error) => toast("File could not be opened", { description: error.message }) });
   const downloadEvidence = trpc.clientPortal.downloadCoreEvidence.useMutation({ onSuccess: ({ url }) => window.open(url, "_blank", "noopener,noreferrer"), onError: (error) => toast("Document could not be opened", { description: error.message }) });
+  const downloadCompletionSummary = trpc.clientPortal.downloadCompletionSummary.useMutation({ onSuccess: ({ contentBase64, fileName }) => { downloadPdf(contentBase64, fileName); toast("Completion summary downloaded"); }, onError: (error) => toast("Completion summary could not be generated", { description: error.message }) });
 
   useEffect(() => {
     if (!session.isLoading && !session.data) setLocation("/login");
@@ -57,8 +58,9 @@ export default function ClientDashboard() {
         <section className="portal-lifecycle-list" aria-label="ITAD job lifecycle">
           <div className="portal-section-head"><div><p className="asset-label dark-label"><span className="label-dot" />ITAD LIFECYCLE</p><h2>From collection to <em>verified outcome.</em></h2></div><small>Completion follows document approval, not an automatic claim.</small></div>
           {lifecycle.data?.length ? lifecycle.data.map(({ job, collection }) => {
-            const activeIndex = jobStages.indexOf(job.stage as (typeof jobStages)[number]);
-            return <article className="portal-job-lifecycle" key={job.id}><div className="portal-card-top"><div><span>{job.jobReference}</span><h3>{job.title}</h3><p>{collection?.reference ? `Collection ${collection.reference}` : "ITAD Core Job"}</p></div><strong className={`portal-status portal-stage-${job.stage}`}>{jobLabels[job.stage as (typeof jobStages)[number]]}</strong></div><div className="portal-job-route">{jobStages.map((stage, index) => <div key={stage} className={index <= activeIndex ? "is-complete" : ""}><span>{String(index + 1).padStart(2, "0")}</span><i /><small>{jobLabels[stage]}</small></div>)}</div>{job.completedAt ? <p className="portal-completion-note"><CheckCircle2 size={16} />Completed {formatDate(job.completedAt)}. Issued documents remain available below.</p> : null}</article>;
+            const { activeIndex, percent } = getClientJobLifecycleProgress(job.stage);
+            const stage = job.stage as ClientJobStage;
+            return <article className="portal-job-lifecycle" key={job.id}><div className="portal-card-top"><div><span>{job.jobReference}</span><h3>{job.title}</h3><p>{collection?.reference ? `Collection ${collection.reference}` : "ITAD Core Job"}</p></div><strong className={`portal-status portal-stage-${job.stage}`}>{clientJobStageLabels[stage] || "Intake"}</strong></div><div className="portal-progress-meta"><strong>{percent}% complete</strong><span>Current stage: {clientJobStageLabels[stage] || "Intake"}</span></div><div className="portal-progress-bar" role="progressbar" aria-label={`${job.jobReference} lifecycle progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><i style={{ width: `${percent}%` }} /></div><div className="portal-job-route">{clientJobStages.map((currentStage, index) => <div key={currentStage} className={index <= activeIndex ? "is-complete" : ""}><span>{String(index + 1).padStart(2, "0")}</span><i /><small>{clientJobStageLabels[currentStage]}</small></div>)}</div>{job.completedAt ? <div className="portal-completion-note"><span><CheckCircle2 size={16} />Completed {formatDate(job.completedAt)}. Issued documents remain available below.</span><button disabled={downloadCompletionSummary.isPending} onClick={() => downloadCompletionSummary.mutate({ jobId: job.id })}>{downloadCompletionSummary.isPending ? <LoaderCircle className="assessment-spin" size={15} /> : <Download size={15} />}Completion summary PDF</button></div> : null}</article>;
           }) : <p className="portal-empty-inline">The Core Job lifecycle will appear after Operations opens your collection route.</p>}
         </section>
 

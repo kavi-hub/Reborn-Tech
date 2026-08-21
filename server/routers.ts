@@ -11,6 +11,7 @@ import { notifyOwner } from "./_core/notification";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { sendClientPasswordResetEmail, sendCollectionStatusEmail, sendExceptionLifecycleEmail, sendPortalInvitationEmail } from "./rebornEmail";
 import { sendCollectionBookedEmail, sendJobCompletedEmail } from "./rebornEmail";
+import { createCompletionSummaryPdf, createDestructionCertificateTemplatePdf } from "./completionPdf";
 import { mapSecurazeCsv } from "./securazeCsv";
 import { createSecurazePreviewReceipt, securazeFileHash, verifySecurazePreviewReceipt } from "./securazePreview";
 import { clearClientPortalSession, hashClientPassword, setClientPortalSession, verifyClientPassword } from "./clientPortalAuth";
@@ -230,6 +231,18 @@ export const appRouter = router({
       if (!evidence.storageKey || !evidence.fileName) throw new TRPCError({ code: "NOT_FOUND", message: "This evidence file is not available through your client account" });
       return { url: await storageGetSignedUrl(evidence.storageKey), fileName: evidence.fileName };
     }),
+    downloadCompletionSummary: clientPortalProcedure.input(z.object({ jobId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const [lifecycle, documents, impacts, collections] = await Promise.all([
+        listClientPortalJobLifecycle(ctx.clientSession.organisationId, ctx.clientSession.brand),
+        listClientPortalCoreEvidence(ctx.clientSession.organisationId, ctx.clientSession.brand),
+        listClientPortalImpactStatements(ctx.clientSession.organisationId, ctx.clientSession.brand),
+        listClientPortalCollections(ctx.clientSession.organisationId, ctx.clientSession.brand),
+      ]);
+      const current = lifecycle.find((entry) => entry.job.id === input.jobId && entry.job.stage === "completed");
+      if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "A completion summary is available only for a completed job in your organisation" });
+      const contentBase64 = await createCompletionSummaryPdf({ brand: ctx.clientSession.brand, jobReference: current.job.jobReference, jobTitle: current.job.title, organisationName: collections[0]?.organisation.name || "Client organisation", completedAt: current.job.completedAt || current.job.updatedAt, documents: documents.filter((entry) => entry.job.id === input.jobId).map((entry) => entry.evidence), impact: impacts.find((entry) => entry.job.id === input.jobId)?.impact || null });
+      return { fileName: `${current.job.jobReference.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-completion-summary.pdf`, contentBase64 };
+    }),
   }),
   assessment: router({
     submit: publicProcedure.input(assessmentInputSchema).mutation(async ({ input }) => {
@@ -316,6 +329,13 @@ export const appRouter = router({
       return { job, completionEmailsSent: results.filter(Boolean).length };
     }),
     securazeTemplate: adminProcedure.query(() => ({ fileName: "securaze-itad-import-template.csv", acceptedHeaders: ["Serial Number", "Result", "Device Type", "Manufacturer", "Model", "Asset Tag"], csv: "\uFEFFSerial Number,Result,Device Type,Manufacturer,Model,Asset Tag\r\nEXAMPLE-123,Completed,Laptop,Example Manufacturer,Example Model,ASSET-001\r\n" })),
+    destructionCertificateTemplate: adminProcedure.input(z.object({ jobId: z.number().int().positive(), brand: itadBrandSchema })).mutation(async ({ input }) => {
+      const [detail, routes] = await Promise.all([getItadJobDetail(input.jobId, input.brand), listAdminCollections(input.brand)]);
+      const route = routes.find((entry) => entry.job?.id === input.jobId);
+      if (!route) throw new TRPCError({ code: "NOT_FOUND", message: "The Core Job could not be matched to a collection route in this brand workspace" });
+      const contentBase64 = await createDestructionCertificateTemplatePdf({ brand: input.brand, jobReference: detail.job.jobReference, jobTitle: detail.job.title, organisationName: route.organisation.name, collectionReference: route.collection.reference, assetCount: detail.assets.length });
+      return { fileName: `${detail.job.jobReference.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-destruction-certificate-template.pdf`, contentBase64 };
+    }),
     addAsset: adminProcedure.input(coreAssetSchema).mutation(async ({ input }) => {
       const asset = await createItadJobAsset(input);
       return { asset };
