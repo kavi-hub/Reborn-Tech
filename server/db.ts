@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, like, lte, or } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, gt, gte, inArray, isNotNull, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createHash, randomBytes } from "node:crypto";
 import { assessmentRequests, brandSupportContacts, clientNotificationEvents, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImpactStatements, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
@@ -892,7 +892,7 @@ export async function listClientPortalJobLifecycle(organisationId: number, brand
     .orderBy(desc(itadJobs.updatedAt));
 }
 
-export async function listClientPortalCompletionArchive(organisationId: number, brand: ItadBrand, input: { search?: string; completedFrom?: Date; completedTo?: Date; sort: "newest" | "oldest" }) {
+export async function listClientPortalCompletionArchive(organisationId: number, brand: ItadBrand, input: { search?: string; completedFrom?: Date; completedTo?: Date; documentType?: "securaze_report" | "destruction_certificate" | "impact_statement"; sort: "newest" | "oldest"; page: number; pageSize: number }) {
   const db = await getDb();
   if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
   const conditions = [eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(itadJobs.stage, "completed"), isNotNull(itadJobs.completedAt)];
@@ -902,10 +902,16 @@ export async function listClientPortalCompletionArchive(organisationId: number, 
   }
   if (input.completedFrom) conditions.push(gte(itadJobs.completedAt, input.completedFrom));
   if (input.completedTo) conditions.push(lte(itadJobs.completedAt, input.completedTo));
-  return db.select({ job: itadJobs, collection: collectionTracks }).from(itadJobs)
-    .leftJoin(collectionTracks, and(eq(collectionTracks.jobId, itadJobs.id), eq(collectionTracks.brand, brand)))
-    .where(and(...conditions))
-    .orderBy(input.sort === "oldest" ? asc(itadJobs.completedAt) : desc(itadJobs.completedAt));
+  const evidenceFilter = input.documentType ? and(eq(itadJobEvidenceRecords.jobId, itadJobs.id), eq(itadJobEvidenceRecords.brand, brand), eq(itadJobEvidenceRecords.evidenceType, input.documentType), isNotNull(itadJobEvidenceRecords.customerApprovedAt)) : undefined;
+  const archiveQuery = input.documentType
+    ? db.selectDistinct({ job: itadJobs, collection: collectionTracks }).from(itadJobs).leftJoin(collectionTracks, and(eq(collectionTracks.jobId, itadJobs.id), eq(collectionTracks.brand, brand))).innerJoin(itadJobEvidenceRecords, evidenceFilter!)
+    : db.select({ job: itadJobs, collection: collectionTracks }).from(itadJobs).leftJoin(collectionTracks, and(eq(collectionTracks.jobId, itadJobs.id), eq(collectionTracks.brand, brand)));
+  const countQuery = input.documentType
+    ? db.select({ total: countDistinct(itadJobs.id) }).from(itadJobs).innerJoin(itadJobEvidenceRecords, evidenceFilter!)
+    : db.select({ total: count() }).from(itadJobs);
+  const [{ total }] = await countQuery.where(and(...conditions));
+  const items = await archiveQuery.where(and(...conditions)).orderBy(input.sort === "oldest" ? asc(itadJobs.completedAt) : desc(itadJobs.completedAt)).limit(input.pageSize).offset((input.page - 1) * input.pageSize);
+  return { items, total, page: input.page, pageSize: input.pageSize, pageCount: Math.max(1, Math.ceil(Number(total) / input.pageSize)) };
 }
 
 async function getActivePortalInvitation(token: string) {

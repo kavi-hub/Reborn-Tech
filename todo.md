@@ -241,3 +241,12 @@
 - [x] Add archive filters for job reference/title and completion date, plus newest/oldest sorting.
 - [x] Present a client-facing completion-summary archive with responsive filter, sort and download controls.
 - [x] Add tests for archive scope, completed-only rules, filtering and deterministic sort order.
+
+## Client document access improvements
+
+- [x] Add an in-browser completion-summary preview using the existing password-scoped summary payload, without persisting or exposing PDFs across organisations or brands.
+- [x] Add server-enforced pagination to the completion-summary archive with total count and bounded page sizes.
+- [x] Add completed-summary document-type filtering for Securaze evidence, destruction certificates and impact statements.
+- [x] Add responsive client controls for preview, pagination and document-type filtering without adding a separate dashboard route.
+- [x] Add tests for preview scope, page boundaries, totals and document-type filters.
+- [x] Handle failed preview requests without leaving an unhandled client-side promise rejection.

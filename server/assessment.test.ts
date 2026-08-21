@@ -835,11 +835,13 @@ describe("assessment input validation", () => {
     await expect(client.clientPortal.downloadCompletionSummary({ jobId: 12 })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("returns only the password-scoped completion archive using the selected search, date and sort filters", async () => {
-    mocks.listClientPortalCompletionArchive.mockResolvedValue([{ job: { id: 12, jobReference: "RB-100", stage: "completed" }, collection: { id: 91 } }]);
+  it("returns only the password-scoped completion archive using selected search, date, type, pagination and sort filters", async () => {
+    mocks.listClientPortalCompletionArchive.mockResolvedValue({ items: [{ job: { id: 12, jobReference: "RB-100", stage: "completed" }, collection: { id: 91 } }], total: 21, page: 2, pageSize: 10, pageCount: 3 });
     const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "bulk_gsm", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
-    await expect(client.clientPortal.completionArchive({ search: "RB-100", completedFrom: new Date("2026-09-01"), completedTo: new Date("2026-09-30"), sort: "oldest" })).resolves.toHaveLength(1);
-    expect(mocks.listClientPortalCompletionArchive).toHaveBeenCalledWith(55, "bulk_gsm", expect.objectContaining({ search: "RB-100", sort: "oldest" }));
+    await expect(client.clientPortal.completionArchive({ search: "RB-100", completedFrom: new Date("2026-09-01"), completedTo: new Date("2026-09-30"), documentType: "destruction_certificate", sort: "oldest", page: 2, pageSize: 10 })).resolves.toMatchObject({ total: 21, pageCount: 3, items: [expect.objectContaining({ job: expect.objectContaining({ id: 12 }) })] });
+    expect(mocks.listClientPortalCompletionArchive).toHaveBeenCalledWith(55, "bulk_gsm", expect.objectContaining({ search: "RB-100", documentType: "destruction_certificate", sort: "oldest", page: 2, pageSize: 10 }));
     await expect(client.clientPortal.completionArchive({ completedFrom: new Date("2026-10-01"), completedTo: new Date("2026-09-01"), sort: "newest" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(client.clientPortal.completionArchive({ sort: "newest", page: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(client.clientPortal.completionArchive({ sort: "newest", pageSize: 51 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });
