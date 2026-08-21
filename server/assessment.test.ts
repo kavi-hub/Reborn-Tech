@@ -79,6 +79,7 @@ const mocks = vi.hoisted(() => ({
   setClientPortalAccountStatus: vi.fn(),
   recordClientPortalSignIn: vi.fn(),
   listClientPortalCollections: vi.fn(),
+  listClientPortalCompletionArchive: vi.fn(),
   listClientPortalAttachments: vi.fn(),
   listClientPortalAuditEvents: vi.fn(),
   listClientPortalCoreEvidence: vi.fn(),
@@ -164,6 +165,7 @@ vi.mock("./db", () => ({
   setClientPortalAccountStatus: mocks.setClientPortalAccountStatus,
   recordClientPortalSignIn: mocks.recordClientPortalSignIn,
   listClientPortalCollections: mocks.listClientPortalCollections,
+  listClientPortalCompletionArchive: mocks.listClientPortalCompletionArchive,
   listClientPortalAttachments: mocks.listClientPortalAttachments,
   listClientPortalAuditEvents: mocks.listClientPortalAuditEvents,
   listClientPortalCoreEvidence: mocks.listClientPortalCoreEvidence,
@@ -831,5 +833,13 @@ describe("assessment input validation", () => {
     expect(mocks.createCompletionSummaryPdf).toHaveBeenCalledWith(expect.objectContaining({ brand: "reborn", organisationName: "Example client", documents: [expect.objectContaining({ evidenceType: "securaze_report" })] }));
     mocks.listClientPortalJobLifecycle.mockResolvedValue([{ job: { id: 12, jobReference: "RB-100", title: "London laptop collection", stage: "processing", completedAt: null, updatedAt: new Date("2026-09-10") }, collection: { id: 91 } }]);
     await expect(client.clientPortal.downloadCompletionSummary({ jobId: 12 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("returns only the password-scoped completion archive using the selected search, date and sort filters", async () => {
+    mocks.listClientPortalCompletionArchive.mockResolvedValue([{ job: { id: 12, jobReference: "RB-100", stage: "completed" }, collection: { id: 91 } }]);
+    const client = appRouter.createCaller({ user: null, clientSession: { accountId: 44, organisationId: 55, brand: "bulk_gsm", role: "viewer", email: "client@example.com", sessionVersion: 0 }, req: {}, res: {} } as TrpcContext);
+    await expect(client.clientPortal.completionArchive({ search: "RB-100", completedFrom: new Date("2026-09-01"), completedTo: new Date("2026-09-30"), sort: "oldest" })).resolves.toHaveLength(1);
+    expect(mocks.listClientPortalCompletionArchive).toHaveBeenCalledWith(55, "bulk_gsm", expect.objectContaining({ search: "RB-100", sort: "oldest" }));
+    await expect(client.clientPortal.completionArchive({ completedFrom: new Date("2026-10-01"), completedTo: new Date("2026-09-01"), sort: "newest" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

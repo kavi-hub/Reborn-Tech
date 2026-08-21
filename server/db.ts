@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createHash, randomBytes } from "node:crypto";
 import { assessmentRequests, brandSupportContacts, clientNotificationEvents, collectionAttachments, collectionAuditEvents, collectionTracks, customerOrganisationMembers, customerOrganisations, customerPortalAccountActivityEvents, customerPortalAccounts, customerPortalInvitations, InsertAssessmentRequest, InsertUser, itadJobActivityEvents, itadJobAssets, itadJobComments, itadJobEvidenceRecords, itadJobExceptions, itadJobImpactStatements, itadJobImportBatches, itadJobImportExceptions, itadJobs, users } from "../drizzle/schema";
@@ -890,6 +890,22 @@ export async function listClientPortalJobLifecycle(organisationId: number, brand
     .leftJoin(collectionTracks, eq(collectionTracks.jobId, itadJobs.id))
     .where(and(eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(collectionTracks.brand, brand)))
     .orderBy(desc(itadJobs.updatedAt));
+}
+
+export async function listClientPortalCompletionArchive(organisationId: number, brand: ItadBrand, input: { search?: string; completedFrom?: Date; completedTo?: Date; sort: "newest" | "oldest" }) {
+  const db = await getDb();
+  if (!db) throw new Error("ITAD Core storage is temporarily unavailable");
+  const conditions = [eq(itadJobs.organisationId, organisationId), eq(itadJobs.brand, brand), eq(itadJobs.stage, "completed"), isNotNull(itadJobs.completedAt)];
+  if (input.search) {
+    const query = `%${input.search.replace(/[\\%_]/g, "\\$&")}%`;
+    conditions.push(or(like(itadJobs.jobReference, query), like(itadJobs.title, query))!);
+  }
+  if (input.completedFrom) conditions.push(gte(itadJobs.completedAt, input.completedFrom));
+  if (input.completedTo) conditions.push(lte(itadJobs.completedAt, input.completedTo));
+  return db.select({ job: itadJobs, collection: collectionTracks }).from(itadJobs)
+    .leftJoin(collectionTracks, and(eq(collectionTracks.jobId, itadJobs.id), eq(collectionTracks.brand, brand)))
+    .where(and(...conditions))
+    .orderBy(input.sort === "oldest" ? asc(itadJobs.completedAt) : desc(itadJobs.completedAt));
 }
 
 async function getActivePortalInvitation(token: string) {

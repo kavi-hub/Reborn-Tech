@@ -234,3 +234,10 @@
 - [x] Add a visual lifecycle progress bar and clear current-stage marker to the client dashboard.
 - [x] Add tests for certificate template content, completion-PDF access scope and lifecycle progress states.
 - [x] Extract and unit-test the client lifecycle progress calculation used by the visual stage bar.
+
+## Client completion-summary archive
+
+- [x] Add a password-scoped archive query that returns only completed Core Jobs in the client organisation and brand.
+- [x] Add archive filters for job reference/title and completion date, plus newest/oldest sorting.
+- [x] Present a client-facing completion-summary archive with responsive filter, sort and download controls.
+- [x] Add tests for archive scope, completed-only rules, filtering and deterministic sort order.

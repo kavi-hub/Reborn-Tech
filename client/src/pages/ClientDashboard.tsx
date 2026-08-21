@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, CircleHelp, Download, FileCheck2, FileText, Gauge, LoaderCircle, Mail, MapPin, Phone, Route as RouteIcon } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -18,7 +18,12 @@ const downloadPdf = (contentBase64: string, fileName: string) => { const bytes =
 export default function ClientDashboard() {
   const [, setLocation] = useLocation();
   const [auditPage, setAuditPage] = useState(1);
+  const [archiveSearch, setArchiveSearch] = useState("");
+  const [archiveFrom, setArchiveFrom] = useState("");
+  const [archiveTo, setArchiveTo] = useState("");
+  const [archiveSort, setArchiveSort] = useState<"newest" | "oldest">("newest");
   const session = trpc.clientAuth.me.useQuery();
+  const archiveInput = useMemo(() => ({ search: archiveSearch.trim() || undefined, completedFrom: archiveFrom ? new Date(`${archiveFrom}T00:00:00`) : undefined, completedTo: archiveTo ? new Date(`${archiveTo}T23:59:59.999`) : undefined, sort: archiveSort }), [archiveFrom, archiveSearch, archiveSort, archiveTo]);
   const collections = trpc.clientPortal.collections.useQuery(undefined, { enabled: Boolean(session.data) });
   const attachments = trpc.clientPortal.attachments.useQuery(undefined, { enabled: Boolean(session.data) });
   const auditEvents = trpc.clientPortal.auditEvents.useQuery({ page: auditPage, pageSize: 6 }, { enabled: Boolean(session.data) });
@@ -26,6 +31,7 @@ export default function ClientDashboard() {
   const lifecycle = trpc.clientPortal.lifecycle.useQuery(undefined, { enabled: Boolean(session.data) });
   const impactStatements = trpc.clientPortal.impactStatements.useQuery(undefined, { enabled: Boolean(session.data) });
   const support = trpc.clientPortal.supportContact.useQuery(undefined, { enabled: Boolean(session.data) });
+  const completionArchive = trpc.clientPortal.completionArchive.useQuery(archiveInput, { enabled: Boolean(session.data) });
   const logout = trpc.clientAuth.logout.useMutation({ onSuccess: () => setLocation("/login") });
   const downloadAttachment = trpc.clientPortal.downloadAttachment.useMutation({ onSuccess: ({ url }) => window.open(url, "_blank", "noopener,noreferrer"), onError: (error) => toast("File could not be opened", { description: error.message }) });
   const downloadEvidence = trpc.clientPortal.downloadCoreEvidence.useMutation({ onSuccess: ({ url }) => window.open(url, "_blank", "noopener,noreferrer"), onError: (error) => toast("Document could not be opened", { description: error.message }) });
@@ -72,6 +78,8 @@ export default function ClientDashboard() {
             return <article key={collection.id} className="portal-collection-card"><div className="portal-card-top"><div><span>{collection.reference}</span><h2>{collection.title}</h2><p>{organisation.name} · Client dashboard</p></div><strong className={`portal-status portal-status-${collection.status}`}>{collectionLabels[collection.status as (typeof collectionStages)[number]]}</strong></div><div className="portal-route">{collectionStages.map((stage, index) => <div key={stage} className={index <= activeIndex ? "is-complete" : ""}><span>{String(index + 1).padStart(2, "0")}</span><i /><small>{collectionLabels[stage]}</small></div>)}</div><div className="portal-card-meta"><span><CalendarDays size={16} />{collection.scheduledFor ? `Scheduled ${formatDate(collection.scheduledFor)}` : "Collection date to be confirmed"}</span><span><MapPin size={16} />{collection.collectionPostcode || "Collection location held by Operations"}</span></div><section className="portal-route-files"><div><FileText size={17} /><span>ROUTE DOCUMENTS</span></div>{routeAttachments.length ? <ul>{routeAttachments.map(({ attachment }) => <li key={attachment.id}><FileText size={17} /><div><strong>{attachment.fileName}</strong><small>{attachment.attachmentType === "inventory" ? "Asset inventory" : "Collection evidence"} · {formatBytes(attachment.sizeBytes)}</small></div><button onClick={() => downloadAttachment.mutate({ attachmentId: attachment.id })}><Download size={16} />Open</button></li>)}</ul> : <p>No customer-visible route files have been added yet.</p>}</section></article>;
           })}
         </section>
+
+        <section className="portal-completion-archive" aria-label="Completion summary archive"><div className="portal-section-head"><div><p className="asset-label dark-label"><span className="label-dot" />COMPLETION ARCHIVE</p><h2>Past summaries, <em>ready when needed.</em></h2></div><small>Only completed Core Jobs in your organisation are listed.</small></div><div className="portal-archive-filters"><label>Find a job<input value={archiveSearch} onChange={(event) => setArchiveSearch(event.target.value)} placeholder="Reference or title" /></label><label>Completed from<input type="date" value={archiveFrom} onChange={(event) => setArchiveFrom(event.target.value)} /></label><label>Completed to<input type="date" value={archiveTo} onChange={(event) => setArchiveTo(event.target.value)} /></label><label>Order<select value={archiveSort} onChange={(event) => setArchiveSort(event.target.value as "newest" | "oldest")}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></div>{completionArchive.isLoading ? <p className="portal-empty-inline"><LoaderCircle className="assessment-spin" size={16} />Loading completed jobs</p> : completionArchive.data?.length ? <div className="portal-archive-list">{completionArchive.data.map(({ job, collection }) => <article key={job.id}><div><span>{job.jobReference}</span><h3>{job.title}</h3><p>{collection?.reference ? `Collection ${collection.reference} · ` : ""}Completed {formatDate(job.completedAt)}</p></div><button disabled={downloadCompletionSummary.isPending} onClick={() => downloadCompletionSummary.mutate({ jobId: job.id })}>{downloadCompletionSummary.isPending ? <LoaderCircle className="assessment-spin" size={15} /> : <Download size={15} />}Summary PDF</button></article>)}</div> : <p className="portal-empty-inline">No completed jobs match these archive filters.</p>}</section>
 
         <section className="portal-route-files portal-evidence"><div><FileCheck2 size={17} /><span>ISSUED CLIENT DOCUMENTS</span></div>{coreEvidence.data?.length ? <ul>{coreEvidence.data.map(({ evidence, job }) => <li key={evidence.id}><FileCheck2 size={17} /><div><strong>{documentLabels[evidence.evidenceType] || "Issued document"}</strong><small>{evidence.fileName || evidence.certificateReference || "Issued record"} · {job.jobReference}{evidence.issuer ? ` · ${evidence.issuer}` : ""}</small></div>{evidence.fileName ? <button onClick={() => downloadEvidence.mutate({ evidenceId: evidence.id })}><Download size={16} />Open</button> : null}</li>)}</ul> : <p>No approved Securaze evidence or completion certificates have been issued yet.</p>}</section>
 
